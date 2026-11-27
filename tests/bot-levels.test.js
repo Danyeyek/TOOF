@@ -33,9 +33,9 @@ test('у нового простого уровня перебор уже, че�
     const easy = Bot.LEVELS[0].profile;
     const medium = Bot.LEVELS[1].profile;
     assert.deepEqual(easy, {
-        searchDepth: 2, rootMoves: 1, limits: [1, 1, 1], attention: 0.10
+        searchDepth: 1, rootMoves: 2, limits: [2, 2, 2], attention: 0.05
     });
-    assert.equal(easy.searchDepth, medium.searchDepth);
+    assert.ok(easy.searchDepth < medium.searchDepth);
     assert.ok(easy.rootMoves < medium.rootMoves);
     assert.ok(easy.limits.every((limit, i) => limit < medium.limits[i]));
     assert.ok(easy.attention < medium.attention);
