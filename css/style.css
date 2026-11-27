@@ -262,21 +262,31 @@ body {
 .turn.turn-o { border-color: rgba(109, 40, 217, .55); color: var(--o-fill); }
 .turn.is-over { border-color: var(--violet-2); color: #d4d4d4; }
 
-.mode { color: var(--muted); font-size: .7rem; }
+/* Фиксированная высота: смена текста и появление кнопки не двигают экран. */
+.mode {
+    height: 18px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--muted);
+    font-size: .7rem;
+}
 
 .message {
     width: 100%;
-    min-height: 34px;
+    height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 6px 12px;
+    overflow: hidden;
+    padding: 4px 12px;
     border: 1px solid var(--line);
     border-radius: 14px;
     background: #1f1f1f;
     color: #d4d4d4;
     font-size: .8rem;
     font-weight: 600;
+    line-height: 1.2;
     text-align: center;
 }
 
@@ -446,13 +456,17 @@ body {
 /* Ряд действий всегда занимает одну и ту же высоту: появление кнопки не двигает поле и памятку. */
 .actions {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     justify-content: center;
     gap: 8px;
-    min-height: 40px;
+    height: 40px;
+    overflow: hidden;
+    width: 100%;
+    max-width: 498px;
+    margin: 0 auto;
 }
-.actions .btn { padding: 8px 16px; font-size: .75rem; }
+.actions .btn { padding: 8px 16px; font-size: .75rem; white-space: nowrap; }
 
 /* ---------- Памятка ---------- */
 .cheat { width: 100%; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 14px; background: #1a1a1a; }
@@ -746,8 +760,8 @@ body {
     .player__sectors { padding: 2px 5px; font-size: .68rem; }
     .game-top { gap: 5px; }
     .game-top .btn { padding: 6px 8px; font-size: .7rem; }
-    .game-top .message { min-height: 28px; padding: 4px 6px; font-size: .7rem; }
-    .actions .btn { padding: 8px 12px; }
+    .game-top .message { height: 36px; padding: 4px 6px; font-size: .7rem; }
+    .actions .btn { padding: 8px 10px; font-size: .7rem; }
     .demo { grid-template-columns: repeat(var(--w), 10px); grid-template-rows: repeat(var(--h), 10px); }
     .card { min-width: 54px; }
 }
