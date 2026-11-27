@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#161616">
+    <meta name="description" content="TOOF — логическая игра на поле 10×10: соберите фигуру и захватите три сектора из четырёх.">
+    <title>TOOF</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main class="app">
+
+    <section class="screen is-active" id="menuScreen">
+        <div class="orbs" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+        <h1 class="logo">TOOF</h1>
+        <nav class="menu" aria-label="Главное меню">
+            <button class="btn btn-primary" type="button" data-action="bot">🤖 Против бота</button>
+            <button class="btn" type="button" data-action="local">🎮 На одном экране</button>
+            <button class="btn" type="button" data-action="online">🌐 По сети <span class="badge" id="onlineBadge" hidden>0</span></button>
+            <button class="btn btn-accent" type="button" id="resumeGameBtn" hidden>↩ Вернуться в игру</button>
+            <button class="btn" type="button" data-action="rules">📖 Правила</button>
+            <button class="btn btn-donate" type="button" data-action="donate">💛 Поддержать автора</button>
+        </nav>
+        <footer class="menu__footer">
+            <button class="btn btn-icon" id="soundToggleMenu" type="button" aria-pressed="true" title="Звук">🔊</button>
+            <span class="version" id="versionDisplay"></span>
+        </footer>
+    </section>
+
+    <section class="screen" id="gameScreen">
+        <div class="game">
+            <div class="players">
+                <div class="player player-x" id="playerX">
+                    <span class="player__piece" aria-hidden="true"></span>
+                    <span class="player__name" id="xName">Игрок 1</span>
+                    <span class="player__sectors" id="xSectors">0/3</span>
+                </div>
+                <div class="turn" id="turnIndicator">…</div>
+                <div class="player player-o" id="playerO">
+                    <span class="player__piece" aria-hidden="true"></span>
+                    <span class="player__name" id="oName">Игрок 2</span>
+                    <span class="player__sectors" id="oSectors">0/3</span>
+                </div>
+            </div>
+            <p class="mode" id="modeIndicator"></p>
+            <p class="message" id="gameMessage" role="status" aria-live="polite"></p>
+            <p class="net-status" id="netStatus" hidden></p>
+            <div class="board-wrap">
+                <div class="grid" id="boardGrid" role="grid" aria-label="Игровое поле 10 на 10"></div>
+            </div>
+            <div class="actions">
+                <button class="btn btn-primary" id="fixFigureBtn" type="button" hidden>🔒 Подтвердить фигуру</button>
+                <button class="btn btn-accent" id="confirmMoveBtn" type="button" hidden>✅ Подтвердить ход</button>
+                <button class="btn btn-primary" id="rematchButton" type="button" hidden>🔄 Реванш</button>
+                <button class="btn" id="surrenderButton" type="button" hidden>🏳 Сдаться</button>
+                <button class="btn" id="resetButton" type="button" hidden>⟳ Новая игра</button>
+                <button class="btn" id="menuButton" type="button">🏠 Меню</button>
+                <button class="btn btn-icon" id="settingsButton" type="button" aria-expanded="false" aria-controls="settingsPopover" title="Сложность бота" hidden>⚙️</button>
+                <button class="btn btn-icon" id="soundToggleGame" type="button" aria-pressed="true" title="Звук">🔊</button>
+            </div>
+            <div class="settings-popover" id="settingsPopover" hidden>
+                <label class="difficulty__label" for="difficultySelect">Сложность бота</label>
+                <select class="select" id="difficultySelect" aria-label="Сложность бота"></select>
+                <button class="btn btn-back" id="settingsClose" type="button">Готово</button>
+            </div>
+            <div class="cheat" id="cheatSheet" aria-label="Памятка по фигурам"></div>
+        </div>
+        <div class="pass-overlay" id="passOverlay" hidden>
+            <div class="pass-card">
+                <h2 class="title" id="passTitle">Смена игрока</h2>
+                <p id="passText"></p>
+                <button class="btn btn-primary" id="passButton" type="button">Продолжить</button>
+            </div>
+        </div>
+        <div class="pass-overlay" id="difficultyConfirm" hidden>
+            <div class="pass-card">
+                <h2 class="title">Сменить сложность?</h2>
+                <p id="difficultyConfirmText"></p>
+                <div class="confirm-actions">
+                    <button class="btn btn-primary" id="difficultyConfirmYes" type="button">Новая игра</button>
+                    <button class="btn" id="difficultyConfirmNo" type="button">Продолжить</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="screen" id="onlineScreen">
+        <h2 class="title">🌐 Игра по сети</h2>
+        <p class="hint" id="onlineHint">Играйте с другом по ссылке или найдите случайного соперника.</p>
+        <p class="hint" id="invitesHint" hidden>Вас приглашают:</p>
+        <div class="list" id="invitesList"></div>
+        <nav class="menu">
+            <button class="btn btn-primary" id="randomBtn" type="button">🎲 Случайный противник</button>
+            <button class="btn" id="friendRoomBtn" type="button">🔗 Игра с другом по ссылке</button>
+            <button class="btn" id="friendsBtn" type="button">📇 Друзья <span class="badge" id="friendsBadge" hidden>0</span></button>
+            <button class="btn" id="joinCodeBtn" type="button">⌨ Ввести код</button>
+            <button class="btn" id="profileBtn" type="button">👤 Профиль</button>
+        </nav>
+        <p class="hint" id="onlineAccountHint"></p>
+        <button class="btn btn-back" type="button" data-back>← Назад в меню</button>
+        <div class="pass-overlay" id="netSetup" hidden>
+            <div class="pass-card">
+                <h2 class="title">Онлайн ещё не настроен</h2>
+                <p class="hint" id="netSetupText"></p>
+                <button class="btn btn-primary" id="netSetupClose" type="button">Понятно</button>
+            </div>
+        </div>
+        <div class="pass-overlay" id="searchOverlay" hidden>
+            <div class="pass-card">
+                <h2 class="title">🎲 Ищем соперника…</h2>
+                <p class="hint">Обычно это занимает несколько секунд.</p>
+                <button class="btn" id="cancelSearchBtn" type="button">Отменить</button>
+            </div>
+        </div>
+    </section>
+
+    <section class="screen" id="profileScreen">
+        <h2 class="title">👤 Профиль</h2>
+        <div class="panel">
+            <label class="field">
+                <span>Имя</span>
+                <input class="input" id="profileNameInput" maxlength="24" autocomplete="nickname">
+            </label>
+            <p class="hint">Код профиля: <b id="profileCode"></b>
+                <button class="btn btn-mini" id="copyCodeBtn" type="button">Скопировать</button>
+            </p>
+            <p class="hint" id="profileModeHint"></p>
+            <button class="btn btn-primary" id="googleBtn" type="button">Войти через Google</button>
+            <button class="btn" id="signOutBtn" type="button" hidden>Выйти из аккаунта</button>
+            <p class="hint">Без входа профиль, друзья и статистика живут только в этом браузере. После входа — на всех устройствах.</p>
+        </div>
+        <button class="btn btn-back" type="button" data-back="onlineScreen">← Назад</button>
+    </section>
+
+    <section class="screen" id="friendsScreen">
+        <h2 class="title">📇 Друзья</h2>
+        <div class="panel">
+            <div class="row">
+                <input class="input" id="friendCodeInput" maxlength="6" placeholder="Код друга" autocomplete="off">
+                <button class="btn btn-primary" id="addFriendBtn" type="button">Добавить</button>
+            </div>
+            <p class="hint" id="friendsHint"></p>
+            <div class="list" id="friendRequests"></div>
+            <div class="list" id="friendsList"></div>
+        </div>
+        <button class="btn btn-back" type="button" data-back="onlineScreen">← Назад</button>
+    </section>
+
+    <section class="screen" id="joinScreen">
+        <h2 class="title">⌨ Войти по коду</h2>
+        <div class="panel">
+            <input class="input" id="joinCodeInput" maxlength="6" placeholder="Например, ABC123" autocomplete="off">
+            <button class="btn btn-primary" id="joinGameBtn" type="button">Войти</button>
+            <p class="hint" id="joinHint"></p>
+        </div>
+        <button class="btn btn-back" type="button" data-back="onlineScreen">← Назад</button>
+    </section>
+
+    <section class="screen" id="roomScreen">
+        <h2 class="title">🔗 Комната создана</h2>
+        <div class="panel">
+            <p class="hint">Отправьте другу код или ссылку:</p>
+            <p class="room-code" id="roomCode">—</p>
+            <button class="btn btn-primary" id="copyRoomBtn" type="button">Скопировать ссылку</button>
+            <p class="hint">Ждём, пока друг войдёт…</p>
+        </div>
+        <button class="btn btn-back" id="cancelRoomBtn" type="button">Отменить</button>
+    </section>
+
+    <section class="screen" id="rulesScreen">
+        <h2 class="title">📖 Правила игры</h2>
+        <div class="rules" id="rulesText"></div>
+        <div class="tutorial-final" id="tutorialFinal" hidden>
+            <button class="btn btn-accent" id="tutorialPlayBot" type="button">🤖 Играть с ботом на лёгком режиме</button>
+        </div>
+        <button class="btn btn-back" type="button" data-back>← Назад в меню</button>
+    </section>
+
+    <section class="screen" id="donateScreen">
+        <h2 class="title">💛 Поддержать автора</h2>
+        <div class="rules" id="donateText"></div>
+        <button class="btn btn-back" type="button" data-back>← Назад в меню</button>
+    </section>
+
+</main>
+
+<div class="notice" id="notice" hidden></div>
+
+<div class="toast" id="inviteToast" hidden>
+    <p id="inviteText"></p>
+    <div class="toast__actions">
+        <button class="btn btn-primary" id="inviteAccept" type="button">Принять</button>
+        <button class="btn" id="inviteDecline" type="button">Отклонить</button>
+    </div>
+</div>
+
+<noscript>Для игры нужен включённый JavaScript.</noscript>
+
+<script src="js/rules.js"></script>
+<script src="js/game-core.js"></script>
+<script src="js/net-protocol.js"></script>
+<script src="js/sounds.js"></script>
+<script src="js/bot.js"></script>
+<script src="js/tutorial.js"></script>
+
+<!-- Firebase compat SDK: работает без сборщика. -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<script src="js/firebase-config.js"></script>
+<script src="js/net/firebase.js"></script>
+<script src="js/net/transport.js"></script>
+<script src="js/net/session.js"></script>
+<script src="js/net/profile.js"></script>
+<script src="js/net/friends.js"></script>
+<script src="js/net/lobby.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "name": "toof",
+  "version": "0.4.0",
+  "private": true,
+  "description": "TOOF — browser logic game",
+  "scripts": {
+    "test": "node --test",
+    "test:rules": "node --test tests/rules.test.js"
+  }
+}

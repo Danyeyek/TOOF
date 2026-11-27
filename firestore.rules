@@ -1,0 +1,149 @@
+rules_version = '2';
+
+/* ============================================================
+   TOOF — правила Firestore.
+
+   Модель:
+   users/{uid}                         профиль и presence
+   users/{uid}/friends/{friendUid}     друзья зарегистрированного игрока
+   friendRequests/{id}                 заявки в друзья
+   games/{id}                          партия
+   games/{id}/moves/{ply}              журнал ходов
+   queue/{uid}                         очередь случайного подбора
+   rooms/{code}                        комната для игры по ссылке
+
+   Правила не дают менять состав игроков, стороны и имена.
+   Ходы проверяются клиентом, но записать ход может только тот,
+   чья сейчас очередь, и только со следующим номером ply.
+   ============================================================ */
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function isPlayer(data) {
+      return signedIn() && uid() in data.players;
+    }
+
+    function isRequestParticipant(data) {
+      return signedIn() && (uid() == data.from || uid() == data.to);
+    }
+
+    function gamePath(gameId) {
+      return /databases/$(database)/documents/games/$(gameId);
+    }
+
+    /* ---------- Профили ---------- */
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && uid() == userId;
+      allow update: if signedIn() && uid() == userId;
+      allow delete: if false;
+
+      match /friends/{friendId} {
+        allow read, write: if signedIn() && uid() == userId;
+      }
+    }
+
+    /* ---------- Заявки в друзья ---------- */
+    match /friendRequests/{requestId} {
+      allow read: if isRequestParticipant(resource.data);
+
+      allow create: if signedIn()
+        && request.resource.data.from == uid()
+        && request.resource.data.to != uid()
+        && request.resource.data.status == 'pending';
+
+      allow update: if isRequestParticipant(resource.data)
+        && request.resource.data.from == resource.data.from
+        && request.resource.data.to == resource.data.to
+        && request.resource.data.status in ['accepted', 'declined'];
+
+      allow delete: if isRequestParticipant(resource.data);
+    }
+
+    /* ---------- Партии ---------- */
+    match /games/{gameId} {
+      allow read: if isPlayer(resource.data);
+
+      allow create: if signedIn()
+        && isPlayer(request.resource.data)
+        && request.resource.data.players.size() == 2
+        && request.resource.data.status in ['active', 'invited']
+        && request.resource.data.ply == 0
+        && request.resource.data.current == 'X';
+
+      allow update: if isPlayer(resource.data)
+        && request.resource.data.players == resource.data.players
+        && request.resource.data.sides == resource.data.sides
+        && request.resource.data.names == resource.data.names
+        && (
+          /* Ход: ply растёт на 1, очередь переходит сопернику. */
+          (
+            request.resource.data.ply == resource.data.ply + 1
+            && request.resource.data.current != resource.data.current
+            && resource.data.status == 'active'
+          )
+          ||
+          /* Приглашённый принял игру. */
+          (
+            resource.data.status == 'invited'
+            && request.resource.data.status == 'active'
+            && request.resource.data.invited == null
+          )
+          ||
+          /* Отказ, выход или сдача. */
+          request.resource.data.status == 'abandoned'
+          ||
+          /* Ссылка на реванш. */
+          request.resource.data.rematchGameId is string
+        );
+
+      allow delete: if false;
+
+      match /moves/{moveId} {
+        allow read: if isPlayer(get(gamePath(gameId)).data);
+
+        allow create: if signedIn()
+          && isPlayer(get(gamePath(gameId)).data)
+          && get(gamePath(gameId)).data.status == 'active'
+          && get(gamePath(gameId)).data.current == request.resource.data.side
+          && request.resource.data.side == get(gamePath(gameId)).data.sides[uid()]
+          && request.resource.data.ply == get(gamePath(gameId)).data.ply;
+
+        allow update, delete: if false;
+      }
+    }
+
+    /* ---------- Очередь случайного подбора ---------- */
+    match /queue/{userId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && uid() == userId;
+      /* delete нужен и тому, кто забирает соперника из очереди. */
+      allow delete: if signedIn();
+    }
+
+    /* ---------- Комнаты по коду ---------- */
+    match /rooms/{code} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.hostUid == uid()
+        && request.resource.data.status == 'waiting';
+
+      allow update: if signedIn()
+        && resource.data.status == 'waiting'
+        && request.resource.data.status == 'matched'
+        && request.resource.data.joinerUid == uid();
+
+      allow delete: if signedIn();
+    }
+  }
+}
