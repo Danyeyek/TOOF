@@ -56,8 +56,8 @@ const RULES_STORY = [
     {
         id: 'select',
         title: '🖱 Выделение фигуры',
-        caption: 'Выделять фигуру не обязательно.',
-        html: '<p>Нажми на каждую клетку фигуры, чтобы выделить её. Когда все будут выделены, появится кнопка подтверждения. Ничего выделять не обязательно.</p>',
+        caption: 'Выдели клетки фигуры.',
+        html: '<p>Нажми на каждую клетку фигуры, чтобы выделить её. Когда все будут выделены, появится кнопка подтверждения.</p>',
         hold: 15000
     },
     {
@@ -106,8 +106,8 @@ const RULES_STORY_EN = [
       html: '<p>Tap another cell — the paint moves there. When ready, tap outside the board to continue.</p>', hold: 15000 },
     { id: 'figure', title: '🧩 Building a figure', caption: 'Cells combine into a figure.',
       html: '<p>When the right cells sit together, they form a figure. Fix it to claim a sector. All figure types are shown at the end.</p>', clear: ['pending'], hold: 15000 },
-    { id: 'select', title: '🖱 Selecting', caption: 'Selection is optional.',
-      html: '<p>Tap each figure cell to select it. When all are selected, a confirm button appears. Selecting is optional.</p>', hold: 15000 },
+    { id: 'select', title: '🖱 Selecting', caption: 'Select the figure cells.',
+      html: '<p>Tap each figure cell to select it. When all are selected, a confirm button appears.</p>', hold: 15000 },
     { id: 'capture', title: '🏆 Capturing sectors', caption: 'Fix a figure — the sector is yours.',
       html: '<p>The figure is locked; its cells leave play. Orange and purple figures can capture the same sector — that is fine.</p>', delay: 0, clear: ['selected'], hold: 15000 },
     { id: 'span', title: '🧭 Several sectors at once?', caption: 'One figure — two or three sectors.',

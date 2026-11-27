@@ -201,8 +201,8 @@ const Tutorial = (() => {
         cells.forEach(([r, c], i) => {
             const cell = cellAt(r, c);
             if (!cell) return;
-            cell.classList.add('x', 'figure-in');
             cell.style.animationDelay = (i * 140) + 'ms';
+            cell.classList.add('x', 'figure-in');
         });
         setSectors(sectors, true);
         const captionBox = document.getElementById('tutCaption');
@@ -250,8 +250,8 @@ const Tutorial = (() => {
             figureCells.forEach(([r, c], i) => {
                 const cell = cellAt(r, c);
                 if (!cell) return;
-                cell.classList.add('x', 'figure-in');
                 cell.style.animationDelay = (i * 160) + 'ms';
+                cell.classList.add('x', 'figure-in');
             });
         },
         select: () => {
@@ -282,8 +282,8 @@ const Tutorial = (() => {
                     const cell = cellAt(r, c);
                     if (!cell) return;
                     cell.classList.remove('pending', 'selected');
-                    cell.classList.add('o', 'locked', 'figure-in');
                     cell.style.animationDelay = (i * 140) + 'ms';
+                    cell.classList.add('o', 'locked', 'figure-in');
                 });
                 const otherSectors = [];
                 other.forEach(([r, c]) => {

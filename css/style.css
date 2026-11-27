@@ -548,6 +548,10 @@ body {
     overflow: hidden;
 }
 .tutorial-copy.copy-in { -webkit-animation: tutorial-in 0.5s ease both; animation: tutorial-in 0.5s ease both; }
+.tutorial-copy.copy-in,
+.tutorial-grid .cell.intro-in,
+.tutorial-grid .cell.figure-in,
+.tutorial-sector.is-lit { will-change: opacity, transform; }
 @media (max-width: 520px) {
     .tutorial-copy { min-height: 120px; }
 }
@@ -805,5 +809,5 @@ body {
     .tutorial-grid .cell.intro-in { -webkit-animation: tutorial-cell-in 0.4s ease both !important; animation: tutorial-cell-in 0.4s ease both !important; }
     .tutorial-grid .cell.figure-in { -webkit-animation: figure-pop 0.45s ease both !important; animation: figure-pop 0.45s ease both !important; }
     .tutorial-grid .cell.pending { -webkit-animation: pending-pulse 1.4s ease-in-out infinite !important; animation: pending-pulse 1.4s ease-in-out infinite !important; }
-    .tutorial-sector.is-lit { -webkit-animation: sector-breathe 2.4s ease-in-out .45s infinite !important; animation: sector-breathe 2.4s ease-in-out .45s infinite !important; }
+    .tutorial-sector.is-lit { -webkit-animation: sector-breathe 2.4s ease-in-out .45s infinite !important; animation: sector-breathe 2.4s ease-in-out .45s infinite !important; transition: opacity .45s ease, transform .45s ease !important; }
 }
