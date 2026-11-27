@@ -28,7 +28,7 @@ function figureDemo(sheet) {
 
 function figureCards(sheets) {
     return '<div class="cards">' + sheets.map(sheet => {
-        const label = sheet.name ? '<figcaption>' + sheet.name + '</figcaption>' : '';
+        const label = sheet.name ? '<figcaption>' + t(sheet.name) + '</figcaption>' : '';
         return '<figure class="card">' + label + figureDemo(sheet) + '</figure>';
     }).join('') + '</div>';
 }
@@ -44,7 +44,7 @@ function renderDifficulty() {
     Bot.LEVELS.forEach(level => {
         const option = document.createElement('option');
         option.value = String(level.id);
-        option.textContent = level.name;
+        option.textContent = t(level.name);
         select.appendChild(option);
     });
     select.value = String(Bot.level);
@@ -56,7 +56,7 @@ function updateSoundButtons() {
         const button = $(id);
         button.textContent = on ? '🔊' : '🔇';
         button.setAttribute('aria-pressed', String(on));
-        button.title = on ? 'Звук включён' : 'Звук выключен';
+        button.title = t(on ? 'Звук включён' : 'Звук выключен');
     });
 }
 
@@ -71,7 +71,7 @@ function toggleSound() {
 function notify(text) {
     const box = $('notice');
     if (!box) return;
-    box.textContent = text;
+    box.textContent = t(text);
     box.hidden = false;
     clearTimeout(noticeTimer);
     noticeTimer = setTimeout(() => { box.hidden = true; }, 4000);
@@ -99,15 +99,15 @@ function showOnlineSetup() {
     const text = $('netSetupText');
     if (text) {
         if (reason === 'not-configured') {
-            text.textContent = 'Firebase ещё не подключён. Откройте js/firebase-config.js и вставьте данные проекта из Firebase Console. Пошаговая инструкция — в README.md.';
+            text.textContent = t('Firebase ещё не подключён. Откройте js/firebase-config.js и вставьте данные проекта из Firebase Console. Пошаговая инструкция — в README.md.');
         } else if (reason === 'sdk-missing') {
-            text.textContent = 'Не удалось загрузить Firebase SDK. Проверьте интернет и обновите страницу.';
+            text.textContent = t('Не удалось загрузить Firebase SDK. Проверьте интернет и обновите страницу.');
         } else if (reason === 'init-failed') {
-            text.textContent = 'Firebase не смог запуститься. Проверьте настройки проекта и правила Firestore.';
+            text.textContent = t('Firebase не смог запуститься. Проверьте настройки проекта и правила Firestore.');
         } else if (Net.ready && !Profile.state.uid) {
-            text.textContent = 'Профиль ещё загружается. Подождите секунду и попробуйте снова.';
+            text.textContent = t('Профиль ещё загружается. Подождите секунду и попробуйте снова.');
         } else {
-            text.textContent = 'Онлайн сейчас недоступен. Локальные режимы продолжают работать.';
+            text.textContent = t('Онлайн сейчас недоступен. Локальные режимы продолжают работать.');
         }
     }
     $('netSetup').hidden = false;
@@ -125,26 +125,27 @@ function updateAccountHint() {
     const modeHint = $('profileModeHint');
 
     if (!profile.ready) {
-        if (hint) hint.textContent = 'Загружаем профиль…';
+        if (hint) hint.textContent = t('Загружаем профиль…');
         return;
     }
 
     if (!Net.ready) {
-        if (hint) hint.textContent = 'Онлайн не настроен: доступны игра против бота и на одном экране.';
-        if (modeHint) modeHint.textContent = 'Онлайн не настроен. Профиль хранится только в этом браузере.';
+        if (hint) hint.textContent = t('Онлайн не настроен: доступны игра против бота и на одном экране.');
+        if (modeHint) modeHint.textContent = t('Онлайн не настроен. Профиль хранится только в этом браузере.');
         return;
     }
 
     if (hint) {
-        const mode = profile.registered ? 'аккаунт Google' : 'анонимный профиль этого браузера';
-        hint.textContent = 'Вы: ' + profile.name + ' · ' + mode +
-            ' · победы ' + profile.stats.wins + ', поражения ' + profile.stats.losses +
-            ', ничьи ' + profile.stats.draws;
+        const mode = t(profile.registered ? 'аккаунт Google' : 'анонимный профиль этого браузера');
+        hint.textContent = t('Вы: {name} · {mode} · победы {wins}, поражения {losses}, ничьи {draws}', {
+            name: profile.name, mode,
+            wins: profile.stats.wins, losses: profile.stats.losses, draws: profile.stats.draws
+        });
     }
     if (modeHint) {
-        modeHint.textContent = profile.registered
+        modeHint.textContent = t(profile.registered
             ? 'Профиль синхронизируется между устройствами через Google.'
-            : 'Профиль привязан к этому браузеру. Войдите через Google, чтобы играть с того же аккаунта на других устройствах.';
+            : 'Профиль привязан к этому браузеру. Войдите через Google, чтобы играть с того же аккаунта на других устройствах.');
     }
 }
 
@@ -159,7 +160,7 @@ function renderProfile() {
     const google = $('googleBtn');
     if (google) {
         google.hidden = !Net.ready || profile.registered;
-        google.textContent = 'Войти через Google';
+        google.textContent = t('Войти через Google');
     }
 
     const signOut = $('signOutBtn');
@@ -174,17 +175,17 @@ function friendItem(friend) {
 
     const dot = document.createElement('span');
     dot.className = 'presence' + (friend.online ? ' is-online' : '');
-    dot.title = friend.online ? 'В сети' : 'Не в сети';
+    dot.title = t(friend.online ? 'В сети' : 'Не в сети');
 
     const info = document.createElement('div');
     info.className = 'list-item__info';
 
     const name = document.createElement('b');
-    name.textContent = friend.name || 'Игрок';
+    name.textContent = friend.name || t('Игрок');
 
     const code = document.createElement('span');
     code.className = 'list-item__meta';
-    code.textContent = friend.code ? 'Код: ' + friend.code : '';
+    code.textContent = friend.code ? t('Код: ') + friend.code : '';
 
     info.appendChild(name);
     info.appendChild(code);
@@ -192,7 +193,7 @@ function friendItem(friend) {
     const challenge = document.createElement('button');
     challenge.className = 'btn btn-primary btn-mini';
     challenge.type = 'button';
-    challenge.textContent = 'Вызвать';
+    challenge.textContent = t('Вызвать');
     /* Приглашение сохраняется в Firestore, поэтому можно вызывать
        и не онлайн-друга — он увидит его при следующем открытии. */
     challenge.addEventListener('click', () => {
@@ -204,7 +205,7 @@ function friendItem(friend) {
     remove.className = 'btn btn-mini';
     remove.type = 'button';
     remove.textContent = '✕';
-    remove.title = 'Удалить из друзей';
+    remove.title = t('Удалить из друзей');
     remove.addEventListener('click', () => {
         Sound.play('click');
         Friends.remove(friend.uid).catch(error => notify(error.message || 'Не удалось удалить друга'));
@@ -225,11 +226,11 @@ function requestItem(request) {
     info.className = 'list-item__info';
 
     const name = document.createElement('b');
-    name.textContent = request.fromName || 'Игрок';
+    name.textContent = request.fromName || t('Игрок');
 
     const code = document.createElement('span');
     code.className = 'list-item__meta';
-    code.textContent = 'хочет добавить вас в друзья';
+    code.textContent = t('хочет добавить вас в друзья');
 
     info.appendChild(name);
     info.appendChild(code);
@@ -237,7 +238,7 @@ function requestItem(request) {
     const accept = document.createElement('button');
     accept.className = 'btn btn-primary btn-mini';
     accept.type = 'button';
-    accept.textContent = 'Принять';
+    accept.textContent = t('Принять');
     accept.addEventListener('click', () => {
         Sound.play('click');
         Friends.accept(request).catch(error => notify(error.message || 'Не удалось принять заявку'));
@@ -246,7 +247,7 @@ function requestItem(request) {
     const decline = document.createElement('button');
     decline.className = 'btn btn-mini';
     decline.type = 'button';
-    decline.textContent = 'Отклонить';
+    decline.textContent = t('Отклонить');
     decline.addEventListener('click', () => {
         Sound.play('click');
         Friends.decline(request).catch(error => notify(error.message || 'Не удалось отклонить заявку'));
@@ -272,7 +273,7 @@ function renderFriends(data) {
     if (incoming.length) {
         const title = document.createElement('p');
         title.className = 'hint';
-        title.textContent = 'Заявки в друзья:';
+        title.textContent = t('Заявки в друзья:');
         requests.appendChild(title);
         incoming.forEach(request => requests.appendChild(requestItem(request)));
     }
@@ -280,7 +281,7 @@ function renderFriends(data) {
     if (!friends.length) {
         const empty = document.createElement('p');
         empty.className = 'hint';
-        empty.textContent = 'Пока никого нет. Добавьте друга по его коду профиля.';
+        empty.textContent = t('Пока никого нет. Добавьте друга по его коду профиля.');
         list.appendChild(empty);
     } else {
         friends.forEach(friend => list.appendChild(friendItem(friend)));
@@ -295,7 +296,7 @@ function renderFriends(data) {
     const hint = $('friendsHint');
     if (hint) {
         hint.textContent = friends.length
-            ? 'Нажмите «Вызвать», чтобы отправить приглашение. Друг увидит его, когда откроет игру.'
+            ? t('Нажмите «Вызвать», чтобы отправить приглашение. Друг увидит его, когда откроет игру.')
             : '';
     }
 }
@@ -315,11 +316,11 @@ function inviteItem(invite) {
 
     const otherUid = (invite.players || []).find(uid => uid !== Profile.state.uid);
     const name = document.createElement('b');
-    name.textContent = (invite.names && invite.names[otherUid]) || 'Друг';
+    name.textContent = (invite.names && invite.names[otherUid]) || t('Друг');
 
     const meta = document.createElement('span');
     meta.className = 'list-item__meta';
-    meta.textContent = 'приглашает в игру';
+    meta.textContent = t('приглашает в игру');
 
     info.appendChild(name);
     info.appendChild(meta);
@@ -327,7 +328,7 @@ function inviteItem(invite) {
     const accept = document.createElement('button');
     accept.className = 'btn btn-primary btn-mini';
     accept.type = 'button';
-    accept.textContent = 'Принять';
+    accept.textContent = t('Принять');
     accept.addEventListener('click', () => {
         Sound.play('click');
         leaveCurrentGame()
@@ -338,7 +339,7 @@ function inviteItem(invite) {
     const decline = document.createElement('button');
     decline.className = 'btn btn-mini';
     decline.type = 'button';
-    decline.textContent = 'Отклонить';
+    decline.textContent = t('Отклонить');
     decline.addEventListener('click', () => {
         Sound.play('click');
         Lobby.declineInvite(invite).catch(error => notify(error.message || 'Не удалось отклонить приглашение'));
@@ -522,7 +523,7 @@ document.addEventListener('DOMContentLoaded', () => {
         Sound.play('click');
         Tutorial.play();
     });
-    $('donateText').innerHTML = DONATE_TEXT;
+    $('donateText').innerHTML = I18N.lang === 'en' ? DONATE_TEXT_EN : DONATE_TEXT;
     $('cheatSheet').innerHTML = figureCards(BASE_FIGURES);
     $('versionDisplay').textContent = 'v' + VERSION;
 
@@ -555,8 +556,9 @@ document.addEventListener('DOMContentLoaded', () => {
         pendingLevel = requested;
         $('difficultySelect').value = String(previous);
         const level = Bot.LEVELS.find(l => l.id === requested);
-        $('difficultyConfirmText').textContent =
-            'Новая сложность — ' + (level ? level.name : '') + '. Начать игру заново?';
+        $('difficultyConfirmText').textContent = t('Новая сложность — {level}. Начать игру заново?', {
+            level: level ? t(level.name) : ''
+        });
         $('difficultyConfirm').hidden = false;
     });
 
@@ -578,6 +580,18 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('toof:difficulty', () => {
         renderDifficulty();
         UI.render();
+    });
+
+    /* Язык меняется без перезагрузки: перерисовываем только текст. */
+    document.addEventListener('toof:lang', () => {
+        const rulesScreen = $('rulesScreen');
+        if (rulesScreen && rulesScreen.classList.contains('is-active')) Tutorial.start($('rulesText'));
+        $('donateText').innerHTML = I18N.lang === 'en' ? DONATE_TEXT_EN : DONATE_TEXT;
+        $('cheatSheet').innerHTML = figureCards(BASE_FIGURES);
+        renderDifficulty();
+        updateAccountHint();
+        renderProfile();
+        UI.refreshLanguage();
     });
 
     document.querySelectorAll('[data-action]').forEach(button => {

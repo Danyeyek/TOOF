@@ -58,31 +58,31 @@ const UI = (() => {
         state.message = text;
         state.messageKind = kind || '';
         const box = $('gameMessage');
-        box.textContent = text;
+        box.textContent = t(text);
         box.className = 'message' + (kind ? ' ' + kind : '');
     }
 
     function nameOf(symbol) {
         if (state.mode === 'online') {
-            return symbol === state.mySide ? 'Вы' : state.opponentName;
+            return symbol === state.mySide ? t('Вы') : state.opponentName;
         }
-        return NAMES[state.mode][symbol];
+        return t(NAMES[state.mode][symbol]);
     }
 
     function cellWord(count) {
         const mod10 = count % 10;
         const mod100 = count % 100;
-        if (mod10 === 1 && mod100 !== 11) return 'клетка';
-        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'клетки';
-        return 'клеток';
+        if (mod10 === 1 && mod100 !== 11) return t('клетка');
+        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return t('клетки');
+        return t('клеток');
     }
 
     function ariaCell(r, c, value) {
-        const what = value === 'X' ? 'оранжевая' : value === 'O' ? 'фиолетовая' : 'пусто';
+        const what = t(value === 'X' ? 'оранжевая' : value === 'O' ? 'фиолетовая' : 'пусто');
         let extra = '';
-        if (Game.isLocked(r, c)) extra = ', зафиксировано';
-        else if (Game.isSelected(r, c)) extra = ', выделено';
-        return what + ', строка ' + (r + 1) + ', столбец ' + (c + 1) + extra;
+        if (Game.isLocked(r, c)) extra = t(', зафиксировано');
+        else if (Game.isSelected(r, c)) extra = t(', выделено');
+        return what + t(', строка ') + (r + 1) + t(', столбец ') + (c + 1) + extra;
     }
 
     function renderBoard() {
@@ -124,10 +124,10 @@ const UI = (() => {
 
         const turn = $('turnIndicator');
         if (Game.over) {
-            turn.textContent = Game.winner ? '🏆 ' + nameOf(Game.winner) : '🤝 Ничья';
+            turn.textContent = Game.winner ? '🏆 ' + nameOf(Game.winner) : t('🤝 Ничья');
             turn.className = 'turn is-over';
         } else {
-            turn.textContent = 'Ход: ' + nameOf(Game.current);
+            turn.textContent = t('Ход: ') + nameOf(Game.current);
             turn.className = 'turn ' + (Game.current === 'X' ? 'turn-x' : 'turn-o');
         }
 
@@ -147,20 +147,20 @@ const UI = (() => {
         if (netStatus) {
             let text = '';
             if (state.mode === 'online') {
-                if (state.onlineStatus === 'invited') text = 'Ждём, пока друг примет приглашение…';
-                else if (state.onlineStatus === 'abandoned') text = 'Соперник вышел из игры.';
-                else if (state.onlineStatus === 'rematch') text = 'Соперник предлагает реванш.';
-                else if (state.awaitingEcho) text = 'Отправляем ход…';
+                if (state.onlineStatus === 'invited') text = t('Ждём, пока друг примет приглашение…');
+                else if (state.onlineStatus === 'abandoned') text = t('Соперник вышел из игры.');
+                else if (state.onlineStatus === 'rematch') text = t('Соперник предлагает реванш.');
+                else if (state.awaitingEcho) text = t('Отправляем ход…');
             }
             netStatus.textContent = text;
             netStatus.hidden = !text;
         }
 
         $('modeIndicator').textContent = state.mode === 'bot'
-            ? 'Против бота · ' + Bot.name()
+            ? t('Против бота · ') + t(Bot.name())
             : state.mode === 'online'
-                ? 'По сети · против ' + state.opponentName
-                : 'На одном экране';
+                ? t('По сети · против ') + state.opponentName
+                : t('На одном экране');
     }
 
     function finish(winner) {
@@ -179,7 +179,7 @@ const UI = (() => {
                 kind = 'win';
             } else if (winner) {
                 Sound.play('lose');
-                text = 'Победил ' + nameOf(winner) + '.';
+                text = t('Победил ') + nameOf(winner) + '.';
                 kind = 'lose';
             } else {
                 text = 'Ничья — свободных клеток не осталось.';
@@ -203,15 +203,15 @@ const UI = (() => {
             const result = Bot.recordResult(winner === state.human, !winner);
             if (result.changed) {
                 text += result.direction === 'up'
-                    ? ' Сложность повышена: ' + result.name + '.'
-                    : ' Сложность снижена: ' + result.name + '.';
+                    ? t(' Сложность повышена: ') + t(result.name) + '.'
+                    : t(' Сложность снижена: ') + t(result.name) + '.';
             }
             if (typeof CustomEvent === 'function') {
                 document.dispatchEvent(new CustomEvent('toof:difficulty'));
             }
         } else if (winner) {
             Sound.play('win');
-            text = nameOf(winner) + ' победил! 🎉';
+            text = nameOf(winner) + t(' победил! 🎉');
             kind = 'win';
         } else {
             text = 'Ничья — свободных клеток не осталось.';
@@ -280,8 +280,9 @@ const UI = (() => {
         if (state.mode !== 'local' || Game.over) return;
         state.awaitingPass = true;
         const next = nameOf(Game.current);
-        $('passTitle').textContent = 'Ход: ' + next;
-        $('passText').textContent = 'Передайте устройство игроку ' + next + ', затем нажмите «Продолжить».';
+        $('passTitle').textContent = t('Ход: ') + next;
+        $('passText').textContent = t('Передайте устройство игроку ') + next +
+            t(', затем нажмите «Продолжить».');
         $('passOverlay').hidden = false;
         render();
     }
@@ -310,7 +311,7 @@ const UI = (() => {
         }
         if (!Game.toggle(r, c)) {
             if (Game.selected.length >= MAX_FIGURE) {
-                setMessage('В фигуре не больше ' + MAX_FIGURE + ' клеток.');
+                setMessage(t('В фигуре не больше {n} клеток.', { n: MAX_FIGURE }));
             }
             return;
         }
@@ -318,8 +319,8 @@ const UI = (() => {
         Sound.play('click');
         const count = Game.selected.length;
         setMessage(count
-            ? 'Выделено ' + count + ' ' + cellWord(count) + '.'
-            : 'Выделение снято.');
+            ? t('Выделено {n} {word}.', { n: count, word: cellWord(count) })
+            : t('Выделение снято.'));
         render();
     }
 
@@ -391,7 +392,7 @@ const UI = (() => {
             return;
         }
 
-        setMessage('Фигура зафиксирована. Ход переходит к ' + nameOf(Game.current) + '.');
+        setMessage(t('Фигура зафиксирована. Ход переходит к ') + nameOf(Game.current) + '.');
         render();
         beginPass();
         scheduleBot();
@@ -410,7 +411,7 @@ const UI = (() => {
             finish(null);
             return;
         }
-        setMessage('Ход передан. Ходит ' + nameOf(Game.current) + '.');
+        setMessage(t('Ход передан. Ходит ') + nameOf(Game.current) + '.');
         render();
         beginPass();
         scheduleBot();
@@ -445,7 +446,7 @@ const UI = (() => {
         state.mode = 'online';
         state.session = session;
         state.mySide = session.mySide || 'X';
-        state.opponentName = session.opponentName || 'Соперник';
+        state.opponentName = session.opponentName || t('Соперник');
         state.awaitingPass = false;
         state.awaitingEcho = false;
         state.onlineStatus = session.status || 'connecting';
@@ -459,7 +460,7 @@ const UI = (() => {
         showScreen('gameScreen');
         setMessage(state.onlineStatus === 'invited'
             ? 'Приглашение отправлено. Ждём друга…'
-            : 'Вы играете ' + (state.mySide === 'X' ? 'оранжевым' : 'фиолетовым') + '.');
+            : t('Вы играете ') + t(state.mySide === 'X' ? 'оранжевым' : 'фиолетовым') + '.');
         render();
     }
 
@@ -502,8 +503,8 @@ const UI = (() => {
     }
 
     function onlineError(error) {
-        const text = error && error.message ? error.message : 'Не удалось связаться с соперником.';
-        setMessage('Сеть: ' + text, 'lose');
+        const text = error && error.message ? t(error.message) : t('Не удалось связаться с соперником.');
+        setMessage(t('Сеть: ') + text, 'lose');
         render();
     }
 
@@ -515,8 +516,8 @@ const UI = (() => {
         if (!box || !text) return;
 
         const otherUid = (invite.players || []).find(uid => uid !== Profile.state.uid);
-        const name = (invite.names && invite.names[otherUid]) || 'Друг';
-        text.textContent = name + ' приглашает в игру';
+        const name = (invite.names && invite.names[otherUid]) || t('Друг');
+        text.textContent = name + t(' приглашает в игру');
         box.hidden = false;
     }
 
@@ -619,6 +620,12 @@ const UI = (() => {
         });
     }
 
+    /* Перевод уже наложен I18N: перерисовываем динамические подписи на месте. */
+    function refreshLanguage() {
+        setMessage(state.message, state.messageKind);
+        render();
+    }
+
     return {
         init,
         start,
@@ -635,6 +642,7 @@ const UI = (() => {
         onFix,
         onConfirm,
         render,
+        refreshLanguage,
         canChangeDifficulty,
         state
     };

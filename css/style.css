@@ -27,21 +27,24 @@
 
 [hidden] { display: none !important; }
 
+html { scrollbar-gutter: stable; }
+html.lang-pending .app { visibility: hidden; }
 html, body { min-height: 100%; }
 
 body {
     background: var(--bg);
     color: var(--text);
     font: 16px/1.45 'Segoe UI', system-ui, -apple-system, sans-serif;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
+    /* Grid центрирует игру по обеим осям и при этом не обрезает верх,
+       если контент выше экрана (в отличие от flex + align-items:center). */
+    display: grid;
+    place-items: center;
     padding: 12px;
     min-height: 100dvh;
     -webkit-tap-highlight-color: transparent;
 }
 
-.app { width: 100%; max-width: 720px; margin: auto; }
+.app { width: 100%; max-width: 720px; }
 
 /* ---------- Экраны ---------- */
 .screen {
@@ -51,11 +54,16 @@ body {
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: var(--radius);
-    padding: 24px 18px;
+    padding: clamp(12px, 3vh, 24px) clamp(10px, 3vw, 18px);
     box-shadow: 0 24px 48px rgba(0, 0, 0, .55);
 }
 
-.screen.is-active { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.screen.is-active {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: clamp(6px, 1.4vh, 12px);
+}
 
 .title { color: #d4d4d4; font-size: 1.5rem; text-align: center; }
 
@@ -100,11 +108,11 @@ body {
     letter-spacing: .3px;
     text-transform: uppercase;
     cursor: pointer;
-    transition: background .12s linear, border-color .12s linear, color .12s linear;
+    transition: background .12s linear, border-color .12s linear, color .12s linear, filter .12s linear;
 }
 
 .btn:hover { background: #333; border-color: var(--violet); color: #fff; }
-.btn:active { transform: translateY(1px); }
+.btn:active { filter: brightness(.9); }
 .btn:focus-visible { outline: 2px solid var(--violet-3); outline-offset: 2px; }
 
 .btn-primary { background: var(--violet); border-color: var(--violet); color: #fff; }
@@ -125,7 +133,7 @@ body {
     text-align: center;
 }
 
-.menu { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; width: 100%; gap: 8px; margin-top: 8px; }
+.menu { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; width: 100%; gap: clamp(6px, 1.2vh, 8px); margin-top: clamp(4px, 1vh, 8px); }
 .menu .btn { width: 100%; max-width: 320px; }
 
 .btn-donate { flex-direction: column; gap: 2px; border: 2px solid var(--violet-2); color: var(--violet-3); padding: 14px 22px; }
@@ -181,13 +189,27 @@ body {
 .version { color: #555; font-size: .65rem; }
 
 /* ---------- Игра ---------- */
-.game { position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; }
+.game {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: clamp(6px, 1.2vh, 10px);
+    width: 100%;
+}
 
-.players { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; width: 100%; }
+/* Сетка, а не обёртка: игроки и ход не оставляют случайных пустых мест. */
+.players {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+}
 
 .player {
-    flex: 1 1 130px;
-    max-width: 210px;
+    min-width: 0;
+    width: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -258,6 +280,8 @@ body {
 /* ---------- Поле ---------- */
 .board-wrap {
     width: 100%;
+    max-width: 498px; /* 480px поля + 8px отступов + рамка */
+    margin: 0 auto;
     padding: 8px;
     border: 1px solid var(--line);
     border-radius: 18px;
@@ -440,7 +464,7 @@ body {
 .tutorial-stage { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; }
 .tutorial-copy {
     width: 100%;
-    height: 150px;
+    min-height: 150px;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -449,7 +473,7 @@ body {
 }
 .tutorial-copy.copy-in { animation: tutorial-in 0.5s ease both; }
 @media (max-width: 520px) {
-    .tutorial-copy { height: 180px; }
+    .tutorial-copy { min-height: 120px; }
 }
 @keyframes tutorial-in {
     from { opacity: 0; transform: translateY(10px); }
@@ -460,7 +484,7 @@ body {
 .tutorial-text { color: #bbb; font-size: .9rem; line-height: 1.6; }
 
 .tutorial-board { width: 100%; max-width: 340px; margin: 0 auto; }
-.tutorial-grid .cell { animation: tutorial-cell-in 0.4s ease both; }
+.tutorial-grid .cell.intro-in { animation: tutorial-cell-in 0.4s ease both; }
 @keyframes tutorial-cell-in {
     from { opacity: 0; transform: scale(0.7); }
     to { opacity: 1; transform: scale(1); }
@@ -505,21 +529,14 @@ body {
 .tutorial-gallery { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; }
 .tutorial-gallery__label { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .6px; }
 .tutorial-gallery__row { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: 100%; }
-.gallery-card { animation: tutorial-in 0.5s ease both; }
-.gallery-card:nth-child(2) { animation-delay: 0.1s; }
-.gallery-card:nth-child(3) { animation-delay: 0.2s; }
-.gallery-card:nth-child(4) { animation-delay: 0.3s; }
-.gallery-card:nth-child(5) { animation-delay: 0.4s; }
-.gallery-card:nth-child(6) { animation-delay: 0.5s; }
-.gallery-card:nth-child(7) { animation-delay: 0.6s; }
-.gallery-card:nth-child(8) { animation-delay: 0.7s; }
 .demo i { animation: demo-in 0.35s ease both; }
+.gallery-card .demo i { animation: none; }
 @keyframes demo-in {
     from { opacity: 0; transform: scale(0.5); }
     to { opacity: 1; transform: scale(1); }
 }
 
-.tutorial-final { display: flex; justify-content: center; margin-top: 14px; animation: tutorial-in 0.5s ease both; }
+.tutorial-final { display: flex; justify-content: center; margin-top: 14px; }
 .tutorial-final .btn { padding: 12px 22px; font-size: 0.9rem; }
 .tutorial-hint { color: var(--muted); font-size: .72rem; text-align: center; }
 
@@ -666,9 +683,10 @@ body {
 
 /* ---------- Адаптив ---------- */
 @media (max-width: 520px) {
-    .screen { padding: 18px 12px; border-radius: 20px; }
+    .screen { padding: clamp(10px, 2.5vh, 18px) 12px; border-radius: 20px; }
     .logo { font-size: 1.7rem; }
-    .turn { order: 3; flex-basis: 100%; text-align: center; }
+    .players { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .turn { grid-column: 1 / -1; grid-row: 2; justify-self: center; text-align: center; }
     .actions .btn { padding: 8px 12px; }
     .demo { grid-template-columns: repeat(var(--w), 10px); grid-template-rows: repeat(var(--h), 10px); }
     .card { min-width: 54px; }

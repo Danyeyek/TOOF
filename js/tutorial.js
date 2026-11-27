@@ -17,8 +17,9 @@ const Tutorial = (() => {
     let autoTimer = null;
     let pendingPos = [3, 3];
     let figureCells = [];
+    const EXIT_MS = 300;
 
-    function story() { return RULES_STORY; }
+    function story() { return I18N.lang === 'en' ? RULES_STORY_EN : RULES_STORY; }
 
     function isFinal() { return index >= story().length - 1; }
 
@@ -58,7 +59,7 @@ const Tutorial = (() => {
         let html = '';
         for (let r = 0; r < BOARD_SIZE; r++) {
             for (let c = 0; c < BOARD_SIZE; c++) {
-                html += '<div class="cell" data-r="' + r + '" data-c="' + c + '" style="animation-delay:' +
+                html += '<div class="cell intro-in" data-r="' + r + '" data-c="' + c + '" style="animation-delay:' +
                     ((r * BOARD_SIZE + c) * 15) + 'ms"></div>';
             }
         }
@@ -74,7 +75,7 @@ const Tutorial = (() => {
                 cells += '<i class="' + (symbol === 'X' ? 'x' : symbol === 'O' ? 'o' : '') + '"></i>';
             }
         }
-        const label = sheet.name ? '<figcaption>' + sheet.name + '</figcaption>' : '';
+        const label = sheet.name ? '<figcaption>' + t(sheet.name) + '</figcaption>' : '';
         return '<figure class="card gallery-card">' + label +
             '<div class="demo" style="--w:' + sheet.width + ';--h:' + sheet.height + '">' + cells + '</div></figure>';
     }
@@ -86,7 +87,7 @@ const Tutorial = (() => {
     }
 
     function buildStage() {
-        box.innerHTML = '<div class="tutorial-stage">' +
+        box.innerHTML = '<div class="tutorial-stage" id="tutStage">' +
             '<div class="tutorial-copy" id="tutCopy">' +
             '<h3 class="tutorial-title" id="tutTitle"></h3>' +
             '<p class="tutorial-caption" id="tutCaption"></p>' +
@@ -95,12 +96,12 @@ const Tutorial = (() => {
             '<div class="tutorial-board" id="tutBoard"><div class="grid tutorial-grid" id="tutGrid">' +
             cellsHtml() + sectorHtml() + '</div></div>' +
             '<div class="tutorial-gallery" id="tutGallery" hidden>' +
-            '<p class="tutorial-gallery__label">Обычные фигуры</p>' +
+            '<p class="tutorial-gallery__label">' + t('Обычные фигуры') + '</p>' +
             '<div class="tutorial-gallery__row">' + BASE_FIGURES.map(figureCard).join('') + '</div>' +
-            '<p class="tutorial-gallery__label">Диагональные фигуры</p>' +
+            '<p class="tutorial-gallery__label">' + t('Диагональные фигуры') + '</p>' +
             '<div class="tutorial-gallery__row">' + DIAGONAL_FIGURES.map(figureCard).join('') + '</div>' +
             '</div>' +
-            '<p class="tutorial-hint" id="tutorialHint">Нажмите на экран, чтобы продолжить · через 15 секунд рассказ пойдёт сам</p>' +
+            '<p class="tutorial-hint" id="tutorialHint">' + t('Нажмите на экран, чтобы продолжить · через 15 секунд рассказ пойдёт сам') + '</p>' +
             '</div>';
         grid = document.getElementById('tutGrid');
         gallery = document.getElementById('tutGallery');
@@ -143,9 +144,27 @@ const Tutorial = (() => {
         if (!grid) return;
         grid.querySelectorAll('.cell').forEach(cell => {
             cell.classList.remove('x', 'o', 'figure-in', 'locked', 'selected', 'pending');
-            cell.style.animationDelay = '';
         });
         setSectors([0, 1, 2, 3], false);
+    }
+
+    function applyClear(list) {
+        if (!list || !list.length) return;
+        if (list.indexOf('all') !== -1) {
+            clearFigure();
+            return;
+        }
+        if (list.indexOf('sectors') !== -1) setSectors([0, 1, 2, 3], false);
+        if (grid && list.indexOf('pending') !== -1) {
+            grid.querySelectorAll('.cell').forEach(cell => cell.classList.remove('x', 'pending'));
+        }
+        if (grid && list.indexOf('selected') !== -1) {
+            grid.querySelectorAll('.cell').forEach(cell => cell.classList.remove('selected'));
+        }
+        if (list.indexOf('board') !== -1) {
+            const board = document.getElementById('tutBoard');
+            if (board) board.hidden = true;
+        }
     }
 
     function showFigure(cells, sectors, caption) {
@@ -180,7 +199,12 @@ const Tutorial = (() => {
     }
 
     const actions = {
-        field: () => {},
+        field: () => {
+            later(() => {
+                if (!grid) return;
+                grid.querySelectorAll('.cell.intro-in').forEach(cell => cell.classList.remove('intro-in'));
+            }, 2000);
+        },
         goal: () => setSectors([0, 1, 2], true),
         place: () => {
             setSectors([0, 1, 2], false);
@@ -245,9 +269,9 @@ const Tutorial = (() => {
         },
         span: () => {
             later(() => showFigure(
-                [[3, 4], [3, 5], [3, 6], [3, 7]], [0, 1], 'Два сектора — одна фигура.'), 0);
+                [[3, 4], [3, 5], [3, 6], [3, 7]], [0, 1], t('Два сектора — одна фигура.')), 0);
             later(() => showFigure(
-                [[4, 5], [5, 4], [5, 5], [5, 6], [6, 4], [6, 6]], [1, 2, 3], 'Три сектора — та же фигура.'), 3400);
+                [[4, 5], [5, 4], [5, 5], [5, 6], [6, 4], [6, 6]], [1, 2, 3], t('Три сектора — та же фигура.')), 3400);
         },
         gallery: () => {
             const board = document.getElementById('tutBoard');
@@ -293,13 +317,14 @@ const Tutorial = (() => {
 
     function applyAct() {
         const act = story()[index];
+        applyClear(act.clear);
         showText(act);
-        /* Поле и шаги с delay: 0 — сразу; короткий текст — через 2 сек,
-           остальные — через 3, чтобы игрок успел прочитать. */
+        /* Поле стоит стабильно; новые элементы появляются по таймингу шага. */
         const action = actions[act.id];
         if (action) {
-            if (act.id === 'field' || act.delay === 0) action();
-            else later(action, act.delay || 3000);
+            if (act.id === 'field' || act.id === 'move') action();
+            else if (act.delay === 0) later(action, EXIT_MS);
+            else later(action, EXIT_MS + (act.delay || 3000));
         }
 
         const hint = document.getElementById('tutorialHint');
@@ -311,7 +336,7 @@ const Tutorial = (() => {
                 const finalButton = document.getElementById('tutorialPlayBot');
                 if (finalAction) finalAction.hidden = false;
                 if (finalButton) finalButton.hidden = false;
-            }, 3000);
+            }, EXIT_MS + 3000);
             return;
         }
         /* На шаге перестановки продолжение — только клик вне поля, как и сказано в тексте. */
