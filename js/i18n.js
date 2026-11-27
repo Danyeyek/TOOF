@@ -55,6 +55,7 @@ const I18N = (() => {
         'Простой': 'Easy',
         'Средний': 'Medium',
         'Опытный': 'Skilled',
+        'Сложный': 'Hard',
 
         /* Игровой экран */
         '🔒 Подтвердить фигуру': '🔒 Fix figure',
@@ -142,7 +143,7 @@ const I18N = (() => {
         'Скопировать ссылку': 'Copy link',
         'Ждём, пока друг войдёт…': 'Waiting for your friend to join…',
         '📖 Правила игры': '📖 Game rules',
-        '🤖 Играть с ботом на лёгком режиме': '🤖 Play the bot on easy mode',
+        '🤖 Играть с ботом на простом режиме': '🤖 Play the bot on easy mode',
         'Обычные фигуры': 'Basic figures',
         'Диагональные фигуры': 'Diagonal figures',
         'Линия': 'Line',

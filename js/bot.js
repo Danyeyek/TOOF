@@ -464,10 +464,16 @@ function search(state, me, toMove, depth, alpha, beta, branch) {
 /* ---------- Интерфейс ---------- */
 
 const Bot = {
+    /* Уровни идут от самого простого к самому сложному. Профили прежних
+       уровней сохранены и сдвинуты на один номер вверх. */
     LEVELS: [
-        { id: 1, name: 'Простой', profile: { searchDepth: 2, rootMoves: 3,  limits: [4, 3, 3], attention: 0.20 } },
-        { id: 2, name: 'Средний', profile: { searchDepth: 3, rootMoves: 8,  limits: [7, 5, 4], attention: 0.85 } },
-        { id: 3, name: 'Опытный', profile: { searchDepth: 3, rootMoves: 13, limits: [10, 6, 4], attention: 1.00 } }
+        /* Самый простой: ищет на два хода вперёд, но разбирает один кандидат
+           и по одному ответу вглубь, к тому же часто не замечает заготовок.
+           Дебютного усиления нет — играет этим профилем с первого хода. */
+        { id: 1, name: 'Простой', profile: { searchDepth: 2, rootMoves: 1,  limits: [1, 1, 1], attention: 0.10 } },
+        { id: 2, name: 'Средний', profile: { searchDepth: 2, rootMoves: 3,  limits: [4, 3, 3], attention: 0.20 } },
+        { id: 3, name: 'Опытный', profile: { searchDepth: 3, rootMoves: 8,  limits: [7, 5, 4], attention: 0.85 } },
+        { id: 4, name: 'Сложный', profile: { searchDepth: 3, rootMoves: 13, limits: [10, 6, 4], attention: 1.00 } }
     ],
 
     /* Сколько собственных клеток уже поставил бот: одна за ход, fix цвет не стирает. */
@@ -477,13 +483,13 @@ const Bot = {
         return count;
     },
 
-    /* Сколько первых ходов бота считаются дебютом. */
+    /* Сколько первых ходов бота считаются дебютом. У Простого усиления нет;
+       Среднему достаточно двух ходов, остальным — трёх. */
     openingMoves() {
-        return this.level === 1 ? 2 : 3;
+        return this.level === 1 ? 0 : this.level === 2 ? 2 : 3;
     },
 
-    /* Дебют: профиль на один уровень выше; у верхнего уровня усиления нет.
-       Простому достаточно двух крутых ходов, остальным — трёх. */
+    /* Дебют: профиль на один уровень выше; у верхнего уровня усиления нет. */
     profileFor(me, board) {
         const target = this.paintedBy(me, board) < this.openingMoves()
             ? Math.min(this.LEVELS.length, this.level + 1)
