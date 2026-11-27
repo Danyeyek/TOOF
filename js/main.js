@@ -62,7 +62,10 @@ function chooseDifficulty(requested) {
     const popover = $('settingsPopover');
     if (popover) popover.hidden = true;
     const button = $('settingsButton');
-    if (button) button.setAttribute('aria-expanded', 'false');
+    if (button) {
+        button.setAttribute('aria-expanded', 'false');
+        button.blur();
+    }
 
     if (requested === previous) return;
 

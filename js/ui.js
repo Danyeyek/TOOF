@@ -50,7 +50,10 @@ const UI = (() => {
         if (!popover) return;
         popover.hidden = true;
         const button = $('settingsButton');
-        if (button) button.setAttribute('aria-expanded', 'false');
+        if (button) {
+            button.setAttribute('aria-expanded', 'false');
+            button.blur();
+        }
     }
 
     function setMessage(text, kind) {
@@ -556,11 +559,14 @@ const UI = (() => {
             Sound.play('click');
             showScreen('menuScreen');
         });
-        $('settingsButton').addEventListener('click', () => {
+        $('settingsButton').addEventListener('click', event => {
             Sound.play('click');
             const popover = $('settingsPopover');
             popover.hidden = !popover.hidden;
-            $('settingsButton').setAttribute('aria-expanded', String(!popover.hidden));
+            const button = event.currentTarget;
+            button.setAttribute('aria-expanded', String(!popover.hidden));
+            /* При повторном нажатии снимаем фокус/подсветку кнопки. */
+            if (popover.hidden) button.blur();
         });
         $('settingsClose').addEventListener('click', () => {
             Sound.play('click');

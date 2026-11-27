@@ -142,7 +142,7 @@ body {
 /* ---------- Настройки бота ---------- */
 .settings-popover {
     position: absolute;
-    right: 0;
+    left: 0;
     top: 100%;
     margin-top: 4px;
     z-index: 15;
@@ -246,7 +246,12 @@ body {
 .player-o .player__sectors { color: var(--o-fill); }
 
 .turn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     flex: 0 0 auto;
+    min-width: 0;
+    height: 32px;
     padding: 6px 10px;
     border: 1px solid #3a3a3a;
     border-radius: 20px;
@@ -255,9 +260,11 @@ body {
     font-size: .8rem;
     font-weight: 600;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.player, .turn { min-height: 32px; }
+.player, .turn { height: 32px; }
 .turn.turn-x { border-color: rgba(180, 83, 9, .55); color: var(--x-fill); }
 .turn.turn-o { border-color: rgba(109, 40, 217, .55); color: var(--o-fill); }
 .turn.is-over { border-color: var(--violet-2); color: #d4d4d4; }
@@ -752,9 +759,6 @@ body {
     .turn {
         padding: 6px 8px;
         font-size: .7rem;
-        white-space: normal;
-        text-align: center;
-        line-height: 1.2;
     }
     .player { font-size: .72rem; padding: 6px 8px; }
     .player__sectors { padding: 2px 5px; font-size: .68rem; }
