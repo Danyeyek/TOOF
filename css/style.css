@@ -194,7 +194,7 @@ body {
 }
 .menu__footer-buttons { display: flex; align-items: center; justify-content: center; gap: 10px; }
 
-.version { color: #555; font-size: .65rem; }
+.version { display: block; width: 100%; color: #555; font-size: .65rem; text-align: center; }
 
 /* ---------- Игра ---------- */
 .game {
@@ -765,7 +765,7 @@ body {
     }
     .player { font-size: .72rem; padding: 6px 8px; }
     .player__sectors { padding: 2px 5px; font-size: .68rem; }
-    .game-top { gap: 5px; }
+    .game-top { row-gap: 2px; column-gap: 5px; }
     .game-top .btn { padding: 6px 8px; font-size: .7rem; }
     .game-top .message { height: 36px; padding: 4px 6px; font-size: .7rem; }
     .actions .btn { padding: 8px 10px; font-size: .7rem; }
