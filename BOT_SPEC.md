@@ -124,7 +124,7 @@ moves = generateMoves(state, toMove, LIMITS[3-depth])   // LIMITS = [8,5,4]
 
 `chooseMove()` — тонкая обёртка: `decide(...).place`.
 
-## 10. Чего в той версии НЕ было
+## 10. Чего в той верси
 
 - Никаких уровней сложности, рангов ходов, `goodMoveChance`, `missBlockChance`.
 - Никаких `patternGuard`, `figureGuard`, `prioritySpots`, жёстких «банов» фигур.

@@ -149,7 +149,7 @@ const I18N = (() => {
         'Машина': 'Machine',
         'Стул': 'Chair',
         'Смешанная': 'Mixed',
-        'Нажмите на экран, чтобы продолжить · через 15 секунд рассказ пойдёт сам': 'Tap the screen to continue · the story advances automatically after 15 seconds',
+        'Либо через 15 секунд объяснение продолжится автоматически': 'Or the explanation will continue automatically after 15 seconds',
         'Два сектора — одна фигура.': 'Two sectors — one figure.',
         'Три сектора — та же фигура.': 'Three sectors — same figure.',
 

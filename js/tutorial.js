@@ -15,9 +15,9 @@ const Tutorial = (() => {
     let index = 0;
     let timers = [];
     let autoTimer = null;
+    let finishing = false;
     let pendingPos = [3, 3];
     let figureCells = [];
-    const EXIT_MS = 300;
 
     function story() { return I18N.lang === 'en' ? RULES_STORY_EN : RULES_STORY; }
 
@@ -44,6 +44,7 @@ const Tutorial = (() => {
 
     /* При быстром пропуске доводим все отложенные анимации шага до конца. */
     function finishAnimations() {
+        finishing = true;
         let passes = 0;
         while (timers.length && passes++ < 50) {
             const batch = timers;
@@ -53,6 +54,7 @@ const Tutorial = (() => {
                 entry.fn();
             });
         }
+        finishing = false;
     }
 
     function cellsHtml() {
@@ -102,7 +104,7 @@ const Tutorial = (() => {
             '<p class="tutorial-gallery__label">' + t('Диагональные фигуры') + '</p>' +
             '<div class="tutorial-gallery__row">' + DIAGONAL_FIGURES.map(figureCard).join('') + '</div>' +
             '</div>' +
-            '<p class="tutorial-hint" id="tutorialHint">' + t('Нажмите на экран, чтобы продолжить · через 15 секунд рассказ пойдёт сам') + '</p>' +
+            '<p class="tutorial-hint" id="tutorialHint">' + t('Либо через 15 секунд объяснение продолжится автоматически') + '</p>' +
             '<button class="btn btn-primary btn-mini tutorial-confirm" id="tutorialConfirm" type="button" hidden>' +
             t('Подтвердить') + '</button>' +
             '</div>';
@@ -295,10 +297,20 @@ const Tutorial = (() => {
             }
         },
         span: () => {
-            later(() => showFigure(
-                [[3, 4], [3, 5], [3, 6], [3, 7]], [0, 1], t('Два сектора — одна фигура.')), 0);
-            later(() => showFigure(
-                [[4, 5], [5, 4], [5, 5], [5, 6], [6, 4], [6, 6]], [1, 2, 3], t('Три сектора — та же фигура.')), 3400);
+            let phase = 0;
+            const showNext = () => {
+                if (phase % 2 === 0) {
+                    showFigure(
+                        [[3, 4], [3, 5], [3, 6], [3, 7]], [0, 1], t('Два сектора — одна фигура.'));
+                } else {
+                    showFigure(
+                        [[4, 5], [5, 4], [5, 5], [5, 6], [6, 4], [6, 6]], [1, 2, 3], t('Три сектора — та же фигура.'));
+                }
+                phase += 1;
+                /* Пока шаг не пропущен, кадры 2 и 3 секторов чередуются. */
+                if (!finishing) later(showNext, 3400);
+            };
+            showNext();
         },
         gallery: () => {
             const board = document.getElementById('tutBoard');
@@ -354,14 +366,9 @@ const Tutorial = (() => {
         showText(act);
         const confirm = document.getElementById('tutorialConfirm');
         if (confirm) confirm.hidden = act.id !== 'select';
-        /* Поле стоит стабильно; новые элементы появляются по таймингу шага. */
+        /* Новый этап анимируется сразу, без ожидания перед стартом. */
         const action = actions[act.id];
-        if (action) {
-            if (act.id === 'field' || act.id === 'move' || act.id === 'select' ||
-                act.id === 'gallery' || act.id === 'capture') action();
-            else if (act.delay === 0) later(action, EXIT_MS);
-            else later(action, EXIT_MS + (act.delay || 3000));
-        }
+        if (action) action();
 
         const hint = document.getElementById('tutorialHint');
         if (hint) hint.hidden = !!act.final || act.id === 'move' || act.id === 'select';

@@ -1,6 +1,6 @@
 {
   "name": "toof",
-  "version": "0.8.0",
+  "version": "0.8.5",
   "private": true,
   "description": "TOOF — browser logic game",
   "scripts": {
