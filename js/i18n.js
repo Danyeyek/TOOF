@@ -52,10 +52,25 @@ const I18N = (() => {
         'Игровое поле 10 на 10': 'Game board 10 by 10',
         'Памятка по фигурам': 'Figure cheat sheet',
         'Сложность бота': 'Bot difficulty',
+        'Элементарный': 'Elementary',
         'Простой': 'Easy',
+        'Умеренный': 'Moderate',
         'Средний': 'Medium',
-        'Опытный': 'Skilled',
+        'Напряжённый': 'Intense',
         'Сложный': 'Hard',
+        'Невыносимый': 'Unbearable',
+        'Бот ходит первым (оранжевым). Вы — фиолетовый.': 'The bot moves first (orange). You are purple.',
+
+        /* Ранги */
+        'Ранг: ': 'Rank: ',
+        'Новый ранг: ': 'New rank: ',
+        'Новичок': 'Novice',
+        'Любитель': 'Amateur',
+        'Опытный': 'Skilled',
+        'Профи': 'Pro',
+        'Мастер': 'Master',
+        '—': '—',
+        'Дойдите до этого режима серией побед': 'Reach this mode with a win streak',
 
         /* Игровой экран */
         '🔒 Подтвердить фигуру': '🔒 Fix figure',
@@ -74,6 +89,9 @@ const I18N = (() => {
         'клеток': 'cells',
         'оранжевая': 'orange',
         'фиолетовая': 'purple',
+        'оранжевый': 'orange',
+        'фиолетовый': 'purple',
+        'Цвет игрока': 'Player color',
         'пусто': 'empty',
         ', зафиксировано': ', fixed',
         ', выделено': ', selected',
@@ -97,6 +115,9 @@ const I18N = (() => {
         'Бот зафиксировал фигуру. Ваш ход.': 'The bot fixed a figure. Your turn.',
         'Ваш ход.': 'Your turn.',
         'Клетка закрашена. Подтвердите ход или выделите фигуру.': 'Cell painted. Confirm the move or select a figure.',
+        'Клетка закрашена. Можно зафиксировать фигуру и завершить ход.': 'Cell painted. You can fix a figure and finish the turn.',
+        'В этом ходу уже закрашена клетка.': 'A cell is already painted this turn.',
+        'Фигура зафиксирована. Ход не переходит — закрасьте клетку и завершите ход.': 'Figure fixed. The turn stays yours — paint a cell and finish the turn.',
         'Сначала закрасьте клетку.': 'Paint a cell first.',
         'Неправильная фигура.': 'Not a valid figure.',
         'Эта клетка уже занята.': 'This cell is already taken.',
@@ -143,7 +164,7 @@ const I18N = (() => {
         'Скопировать ссылку': 'Copy link',
         'Ждём, пока друг войдёт…': 'Waiting for your friend to join…',
         '📖 Правила игры': '📖 Game rules',
-        '🤖 Играть с ботом на простом режиме': '🤖 Play the bot on easy mode',
+        '🤖 Играть с ботом на элементарном режиме': '🤖 Play the bot on elementary mode',
         'Обычные фигуры': 'Basic figures',
         'Диагональные фигуры': 'Diagonal figures',
         'Линия': 'Line',
@@ -346,3 +367,11 @@ const I18N = (() => {
 })();
 
 const t = (text, args) => I18N.t(text, args);
+
+/* «Мастер Ⅲ» переводится по частям, чтобы римская цифра осталась как есть. */
+function rankLabel(rank) {
+    if (!rank) return t('—');
+    const parts = rank.split(' ');
+    if (parts[0] === 'Мастер' && parts[1]) return t('Мастер') + ' ' + parts[1];
+    return t(rank);
+}

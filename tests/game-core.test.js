@@ -162,17 +162,192 @@ test('replay восстанавливает ту же позицию, что и 
     assert.equal(core.NetProtocol.stateHash(snapshot), core.NetProtocol.stateHash(replayed.snapshot));
 });
 
-test('moveFromGame собирает pending и selected', () => {
+test('moveFromGame собирает клетку и все фигуры хода', () => {
     const core = loadCore();
     const game = core.makeGame();
     game.reset();
-    game.place(2, 3);
-    game.toggle(2, 3);
+    for (let c = 0; c < 4; c++) game.board[0][c] = 'X';
+    for (let c = 0; c < 4; c++) game.toggle(0, c);
+    assert.equal(game.fix().ok, true);
+    game.place(5, 5);
 
     assert.deepEqual(core.NetProtocol.moveFromGame(game), {
-        place: [2, 3],
-        fix: [[2, 3]]
+        place: [5, 5],
+        fix: [[[0, 0], [0, 1], [0, 2], [0, 3]]]
     });
+});
+
+test('выделение и фиксация не зависят от закрашивания клетки', () => {
+    const core = loadCore();
+    const game = core.makeGame();
+    game.reset();
+    for (let c = 0; c < 4; c++) game.board[0][c] = 'X';
+    for (let c = 0; c < 4; c++) assert.equal(game.toggle(0, c), true);
+
+    assert.equal(game.confirm().ok, false, 'без закрашенной клетки ход не завершается');
+    assert.equal(game.current, 'X');
+
+    assert.equal(game.fix().ok, true);
+    assert.equal(game.current, 'X', 'фигура не передаёт ход');
+    assert.equal(game.pending, null);
+    assert.equal(game.figures.length, 1);
+    assert.equal(game.turnFigures.length, 1);
+    assert.deepEqual(game.selected, []);
+});
+
+test('за ход можно закрыть две фигуры с закрашиванием между ними', () => {
+    const core = loadCore();
+    const game = core.makeGame();
+    game.reset();
+    for (let c = 0; c < 4; c++) game.board[0][c] = 'X';
+    for (let c = 0; c < 4; c++) game.board[2][c] = 'X';
+
+    for (let c = 0; c < 4; c++) game.toggle(0, c);
+    assert.equal(game.fix().ok, true, 'первая фигура — до закрашивания');
+    assert.equal(game.current, 'X');
+
+    assert.equal(game.place(9, 9), true);
+    for (let c = 0; c < 4; c++) game.toggle(2, c);
+    assert.equal(game.fix().ok, true, 'вторая фигура — после закрашивания');
+    assert.equal(game.turnFigures.length, 2);
+
+    const move = core.NetProtocol.moveFromGame(game);
+    assert.equal(move.fix.length, 2);
+    assert.equal(game.confirm().ok, true);
+    assert.equal(game.current, 'O');
+    assert.equal(game.figures.length, 2);
+    assert.equal(game.turnFigures.length, 0);
+    assert.equal(game.board[0][0], 'X');
+    assert.equal(game.board[2][0], 'X');
+    assert.equal(game.board[9][9], 'X');
+});
+
+test('за ход нельзя закрасить больше одной клетки', () => {
+    const core = loadCore();
+    const game = core.makeGame();
+    game.reset();
+
+    assert.equal(game.place(0, 0), true);
+    assert.equal(game.place(1, 1), true, 'второй вызов переносит клетку');
+    assert.deepEqual(game.pending, [1, 1]);
+    assert.equal(game.board[0][0], core.EMPTY);
+    assert.equal(game.board.flat().filter(v => v === 'X').length, 1);
+
+    const other = core.makeGame();
+    other.reset();
+    other.place(0, 0);
+    for (let c = 1; c < 4; c++) other.board[0][c] = 'X';
+    for (let c = 0; c < 4; c++) other.toggle(0, c);
+    assert.equal(other.fix().ok, true, 'закрашенная клетка вошла в фигуру');
+    assert.equal(other.place(9, 9), false, 'вторую клетку за ход ставить нельзя');
+    assert.equal(other.board[9][9], core.EMPTY);
+    assert.equal(other.current, 'X');
+    assert.equal(other.confirm().ok, true);
+    assert.equal(other.current, 'O');
+});
+
+test('победная фигура присуждает победу сразу, до закрашивания клетки', () => {
+    const core = loadCore();
+    const game = core.makeGame();
+    const board = emptyBoard(core);
+    for (let c = 0; c < 4; c++) board[0][c] = 'X';
+    game.restore({
+        board,
+        locked: [],
+        owners: [['6,0', 'X'], ['0,6', 'X']],
+        current: 'X',
+        over: false,
+        winner: null
+    });
+
+    for (let c = 0; c < 4; c++) game.toggle(0, c);
+    const fixed = game.fix();
+    assert.equal(fixed.ok, true);
+    assert.equal(fixed.winner, 'X');
+    assert.equal(game.over, true, 'победа не ждёт закрашивания и подтверждения');
+    assert.equal(game.winner, 'X');
+    assert.equal(game.current, 'X', 'ход не переходит после победы');
+    assert.equal(game.pending, null);
+    assert.equal(game.turnFigures.length, 1, 'фигура остаётся в ходе, чтобы уйти в сеть');
+});
+
+test('ход без закрашенной клетки принимается только победной фигурой', () => {
+    const core = loadCore();
+    const board = emptyBoard(core);
+    for (let c = 0; c < 4; c++) board[0][c] = 'X';
+    const snapshot = {
+        board,
+        locked: [],
+        owners: [['6,0', 'X'], ['0,6', 'X']],
+        current: 'X',
+        over: false,
+        winner: null
+    };
+    const move = { place: null, fix: [[[0, 0], [0, 1], [0, 2], [0, 3]]] };
+
+    const win = core.NetProtocol.reduce(snapshot, 'X', move);
+    assert.equal(win.ok, true);
+    assert.equal(win.winner, 'X');
+    assert.equal(win.snapshot.over, true);
+    assert.equal(win.snapshot.current, 'X');
+
+    const plain = core.NetProtocol.reduce({
+        board,
+        locked: [],
+        owners: [],
+        current: 'X',
+        over: false,
+        winner: null
+    }, 'X', move);
+    assert.equal(plain.ok, false, 'непобедную фигуру нельзя отправить без клетки');
+    assert.equal(plain.reason, 'confirm');
+
+    assert.equal(core.NetProtocol.normalizeMove(move).place, null);
+    assert.equal(core.NetProtocol.normalizeMove({ place: null, fix: null }), null);
+});
+
+test('moveFromGame собирает победную фигуру без закрашенной клетки', () => {
+    const core = loadCore();
+    const game = core.makeGame();
+    const board = emptyBoard(core);
+    for (let c = 0; c < 4; c++) board[0][c] = 'X';
+    game.restore({
+        board,
+        locked: [],
+        owners: [['6,0', 'X'], ['0,6', 'X']],
+        current: 'X',
+        over: false,
+        winner: null
+    });
+    for (let c = 0; c < 4; c++) game.toggle(0, c);
+    game.fix();
+
+    assert.deepEqual(core.NetProtocol.moveFromGame(game), {
+        place: null,
+        fix: [[[0, 0], [0, 1], [0, 2], [0, 3]]]
+    });
+});
+
+test('applyMove принимает ход с двумя фигурами', () => {
+    const core = loadCore();
+    const game = core.makeGame();
+    const board = emptyBoard(core);
+    for (let c = 0; c < 4; c++) board[0][c] = 'X';
+    for (let c = 0; c < 4; c++) board[2][c] = 'X';
+    game.restore({ board, locked: [], owners: [], current: 'X', over: false, winner: null });
+
+    const result = game.applyMove({
+        place: [9, 9],
+        fix: [
+            [[0, 0], [0, 1], [0, 2], [0, 3]],
+            [[2, 0], [2, 1], [2, 2], [2, 3]]
+        ]
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.declarer, 'X');
+    assert.equal(game.figures.length, 2);
+    assert.equal(game.current, 'O');
+    assert.equal(game.pending, null);
 });
 
 test('normalizeMove отбрасывает дубли и выходящие за поле клетки', () => {
@@ -182,5 +357,18 @@ test('normalizeMove отбрасывает дубли и выходящие за
     assert.deepEqual(core.NetProtocol.normalizeMove({ place: [0, 0], fix: [] }), {
         place: [0, 0],
         fix: null
+    });
+});
+
+test('normalizeMove понимает одну фигуру и список фигур', () => {
+    const core = loadCore();
+    const line = [[1, 1], [1, 2], [1, 3], [1, 4]];
+    assert.deepEqual(core.NetProtocol.normalizeMove({ place: [0, 0], fix: line }), {
+        place: [0, 0],
+        fix: [line]
+    });
+    assert.deepEqual(core.NetProtocol.normalizeMove({ place: [0, 0], fix: [line, line] }), {
+        place: [0, 0],
+        fix: [line, line]
     });
 });

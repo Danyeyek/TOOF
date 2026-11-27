@@ -7,10 +7,10 @@
 
 const $ = id => document.getElementById(id);
 
-let pendingLevel = null;
 let activeGameId = null;
 let currentRoomCode = null;
 let noticeTimer = null;
+let rankBannerTimer = null;
 let randomCancelled = false;
 let onlineKey = '';
 
@@ -33,9 +33,27 @@ function figureCards(sheets) {
     }).join('') + '</div>';
 }
 
-function closeDifficultyConfirm() {
-    $('difficultyConfirm').hidden = true;
-    pendingLevel = null;
+function renderRank() {
+    const rank = Bot.rankName();
+    const label = rank ? rankLabel(rank) : '';
+    const line = $('rankLine');
+    if (line) line.textContent = t('Ранг: ') + (label || t('—'));
+    const menuRank = $('menuRank');
+    if (menuRank) menuRank.textContent = label;
+}
+
+/* Короткая плашка поверх интерфейса: появляется и сама уходит. */
+function showRankBanner(rank) {
+    const banner = $('rankBanner');
+    if (!banner || !rank) return;
+    banner.textContent = t('Новый ранг: ') + rankLabel(rank);
+    banner.hidden = false;
+    /* Перезапуск анимации при повторном повышении. */
+    banner.style.animation = 'none';
+    void banner.offsetWidth;
+    banner.style.animation = '';
+    clearTimeout(rankBannerTimer);
+    rankBannerTimer = setTimeout(() => { banner.hidden = true; }, 2400);
 }
 
 function renderDifficulty() {
@@ -44,18 +62,22 @@ function renderDifficulty() {
     list.innerHTML = '';
     Bot.LEVELS.forEach(level => {
         const active = level.id === Bot.level;
+        const locked = !Bot.isLevelUnlocked(level.id);
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'difficulty-option' + (active ? ' is-active' : '');
         button.dataset.level = String(level.id);
         button.setAttribute('role', 'option');
         button.setAttribute('aria-selected', String(active));
-        button.textContent = t(level.name);
+        button.disabled = locked;
+        button.textContent = locked ? '🔒 ' + t(level.name) : t(level.name);
+        if (locked) button.title = t('Дойдите до этого режима серией побед');
         list.appendChild(button);
     });
 }
 
 function chooseDifficulty(requested) {
+    if (!Bot.isLevelUnlocked(requested)) return;
     const previous = Bot.level;
     Sound.play('click');
 
@@ -69,21 +91,16 @@ function chooseDifficulty(requested) {
 
     if (requested === previous) return;
 
-    /* До первого хода можно просто сменить уровень на месте. */
-    if (UI.canChangeDifficulty()) {
-        Bot.setLevel(requested);
-        renderDifficulty();
+    Bot.setLevel(requested);
+    renderDifficulty();
+
+    /* До первого хода меняем уровень на месте, не перезапуская партию.
+       После игры (и в середине партии) сразу начинаем новую игру. */
+    if (UI.canChangeDifficulty() && !Game.over) {
         UI.render();
         return;
     }
-
-    /* В середине партии или после её конца — предлагаем новую игру. */
-    pendingLevel = requested;
-    const level = Bot.LEVELS.find(l => l.id === requested);
-    $('difficultyConfirmText').textContent = t('Новая сложность — {level}. Начать игру заново?', {
-        level: level ? t(level.name) : ''
-    });
-    $('difficultyConfirm').hidden = false;
+    UI.start('bot');
 }
 
 function updateSoundButtons() {
@@ -564,9 +581,21 @@ document.addEventListener('DOMContentLoaded', () => {
     $('versionDisplay').textContent = 'v' + VERSION;
 
     Bot.load();
+    Colors.init();
     UI.init();
     updateSoundButtons();
     renderDifficulty();
+    renderRank();
+
+    document.addEventListener('toof:rank', event => {
+        showRankBanner(event.detail && event.detail.rank);
+        renderRank();
+        renderDifficulty();
+    });
+
+    document.addEventListener('toof:color', () => {
+        UI.render();
+    });
 
     $('difficultyList').addEventListener('click', event => {
         const option = event.target.closest('.difficulty-option');
@@ -574,23 +603,9 @@ document.addEventListener('DOMContentLoaded', () => {
         chooseDifficulty(Number(option.dataset.level));
     });
 
-    $('difficultyConfirmYes').addEventListener('click', () => {
-        Sound.play('click');
-        if (pendingLevel) Bot.setLevel(pendingLevel);
-        closeDifficultyConfirm();
-        renderDifficulty();
-        UI.start('bot');
-    });
-
-    $('difficultyConfirmNo').addEventListener('click', () => {
-        Sound.play('click');
-        closeDifficultyConfirm();
-        renderDifficulty();
-        UI.render();
-    });
-
     document.addEventListener('toof:difficulty', () => {
         renderDifficulty();
+        renderRank();
         UI.render();
     });
 
@@ -601,6 +616,8 @@ document.addEventListener('DOMContentLoaded', () => {
         $('donateText').innerHTML = I18N.lang === 'en' ? DONATE_TEXT_EN : DONATE_TEXT;
         $('cheatSheet').innerHTML = figureCards(BASE_FIGURES);
         renderDifficulty();
+        renderRank();
+        Colors.refreshButton();
         updateAccountHint();
         renderProfile();
         UI.refreshLanguage();

@@ -31,30 +31,23 @@ const NetProtocol = (() => {
     /* Приводит ход с провода к строгому виду. Возвращает null, если структура битая. */
     function normalizeMove(raw) {
         if (!raw || typeof raw !== 'object') return null;
-        if (!isCell(raw.place)) return null;
+        const hasPlace = isCell(raw.place);
+        if (!hasPlace && raw.place != null) return null;
 
-        let fix = raw.fix;
-        if (fix === undefined || fix === null) {
-            fix = null;
-        } else {
-            if (!Array.isArray(fix)) return null;
-            if (fix.length === 0) {
-                fix = null;
-            } else {
-                const seen = new Set();
-                const normalized = [];
-                for (const cell of fix) {
-                    if (!isCell(cell)) return null;
-                    const id = cell[0] + ',' + cell[1];
-                    if (seen.has(id)) return null;
-                    seen.add(id);
-                    normalized.push([cell[0], cell[1]]);
-                }
-                fix = normalized;
+        let fix = null;
+        const items = figureList(raw.fix);
+        if (items.length) {
+            fix = [];
+            for (const item of items) {
+                const cells = figureCellsOf(item);
+                if (!cells) return null;
+                fix.push(cells);
             }
         }
+        /* Без закрашенной клетки отправляется только победная фигура. */
+        if (!hasPlace && !fix) return null;
 
-        return { place: [raw.place[0], raw.place[1]], fix };
+        return { place: hasPlace ? [raw.place[0], raw.place[1]] : null, fix };
     }
 
     /* Чистый редьюсер: не трогает глобальный Game. */
@@ -116,12 +109,18 @@ const NetProtocol = (() => {
         });
     }
 
-    /* Собирает ход из текущего локального выбора (pending + selected). */
+    /* Собирает ход: закрашенная клетка плюс все фигуры, закрытые в этом ходу. */
     function moveFromGame(game) {
-        if (!game || !game.pending) return null;
+        if (!game) return null;
+        const figures = (game.turnFigures || []).map(figure => figure.cells.map(parseKey));
+        if (game.selected && (game.selected.length === 4 || game.selected.length === 6)) {
+            figures.push(game.selected.map(parseKey));
+        }
+        /* Победная фигура может быть закрыта до закрашивания клетки. */
+        if (!game.pending && !(game.over && figures.length)) return null;
         return {
-            place: game.pending.slice(),
-            fix: game.selected.length ? game.selected.map(cell => parseKey(cell)) : null
+            place: game.pending ? game.pending.slice() : null,
+            fix: figures.length ? figures : null
         };
     }
 

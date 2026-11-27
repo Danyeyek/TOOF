@@ -4,7 +4,7 @@
    TOOF — константы, тексты и демонстрации фигур
    ============================================================ */
 
-const VERSION = '0.8.5';
+const VERSION = '0.9';
 const BOARD_SIZE = 10;       // поле 10×10
 const SECTOR_SIZE = 5;       // сектор 5×5
 const SECTORS_TO_WIN = 3;    // нужно захватить 3 сектора из 4
@@ -90,7 +90,7 @@ const RULES_STORY = [
         id: 'final',
         title: '🎮 Готов к игре?',
         caption: 'Три сектора — и ты победил.',
-        html: '<p>Кнопка ниже запустит игру с ботом на простом режиме.</p>',
+        html: '<p>Кнопка ниже запустит игру с ботом на элементарном режиме.</p>',
         final: true
     }
 ];
@@ -115,7 +115,7 @@ const RULES_STORY_EN = [
     { id: 'gallery', title: '🧩 All figures', caption: 'Here is what you can build. Figures may be rotated any way.',
       html: '<p>Basic and diagonal figures. A mixed one uses three of your cells and three of your opponent’s.</p>', clear: ['board'], delay: 0, hold: 15000 },
     { id: 'final', title: '🎮 Ready to play?', caption: 'Three sectors — and you win.',
-      html: '<p>The button below starts a game against the bot on easy mode.</p>', final: true }
+      html: '<p>The button below starts a game against the bot on elementary mode.</p>', final: true }
 ];
 
 const DONATE_TEXT = `

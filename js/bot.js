@@ -31,7 +31,8 @@ const PROFILE = {
     searchDepth: 3,
     rootMoves: 14,
     limits: [10, 6, 4],
-    attention: 1
+    attention: 1,
+    winAttention: 1
 };
 
 /* Детерминированный хэш: одна и та же позиция даёт одни и те же «пропуски»,
@@ -107,6 +108,151 @@ const CELL_SPAN = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fil
         }
     }
 })();
+
+/* ---------- «Скоба» — общее основание машины и стула ----------
+   Машина, стул и зеркальный стул отличаются только верхней клеткой
+   над одним и тем же основанием из пяти клеток. Если основание тянется
+   на три сектора, любая из трёх верхних клеток даёт мгновенную победу,
+   а перекрыть все три за один ход невозможно. Поэтому бот уровня
+   «Невыносимый» не даёт построить само основание. */
+
+/* Два основания: прямое (машина/стул) и диагональное
+   (диагональные фигуры). У каждого по три варианта завершения. */
+const BRACKET_BASES = [
+    [[0, -1], [0, 0], [0, 1], [1, -1], [1, 1]],
+    [[-1, 1], [0, 0], [0, 2], [1, -1], [2, 0]]
+];
+const BRACKETS = [];
+
+(function buildBrackets() {
+    const figures = [];
+    for (const name of Object.keys(ORIENTATIONS)) {
+        for (const orientation of ORIENTATIONS[name]) figures.push(orientation);
+    }
+    const seen = new Set();
+    const variants = [];
+    for (const base of BRACKET_BASES) variants.push.apply(variants, buildOrientations(base));
+    for (const cells of variants) {
+        const uid = cells.map(p => key(p[0], p[1])).sort().join('|');
+        if (seen.has(uid)) continue;
+        seen.add(uid);
+
+        const spots = [];
+        for (const figure of figures) {
+            const figureKeys = new Set(figure.map(p => key(p[0], p[1])));
+            if (!cells.every(p => figureKeys.has(key(p[0], p[1])))) continue;
+            for (const p of figure) {
+                if (cells.some(c => c[0] === p[0] && c[1] === p[1])) continue;
+                const sk = key(p[0], p[1]);
+                if (!spots.some(s => key(s[0], s[1]) === sk)) spots.push(p);
+            }
+        }
+        if (spots.length < 2) continue;
+
+        /* Границы учитывают и точки завершения: они тоже читаются с поля. */
+        const shape = cells.concat(spots);
+        const rows = shape.map(p => p[0]);
+        const cols = shape.map(p => p[1]);
+        BRACKETS.push({
+            cells,
+            spots,
+            minR: -Math.min.apply(null, rows),
+            maxR: BOARD_SIZE - 1 - Math.max.apply(null, rows),
+            minC: -Math.min.apply(null, cols),
+            maxC: BOARD_SIZE - 1 - Math.max.apply(null, cols)
+        });
+    }
+})();
+
+/* Опасная скоба: чужих клеток уже достаточно, свободных клеток основы
+   не более двух, и как минимум два верхних хода дают третий сектор. */
+function dangerousBrackets(state, me, oppSec, blind) {
+    const other = OTHER_OF[me];
+    const result = [];
+    for (const tpl of BRACKETS) {
+        for (let ar = tpl.minR; ar <= tpl.maxR; ar++) {
+            for (let ac = tpl.minC; ac <= tpl.maxC; ac++) {
+                const cells = tpl.cells.map(([dr, dc]) => [ar + dr, ac + dc]);
+                let opp = 0;
+                const empties = [];
+                let dead = false;
+                for (const [r, c] of cells) {
+                    const k = key(r, c);
+                    if (state.locked.has(k) || (blind && blind.has(k)) ||
+                        state.board[r][c] === me) { dead = true; break; }
+                    if (state.board[r][c] === other) opp++;
+                    else empties.push([r, c]);
+                }
+                if (dead || opp < 3) continue;
+
+                const sectors = new Set();
+                for (const [r, c] of cells) sectors.add(SECTOR_OF(r, c));
+                const winners = [];
+                for (const [dr, dc] of tpl.spots) {
+                    const r = ar + dr, c = ac + dc;
+                    const k = key(r, c);
+                    if (state.locked.has(k) || (blind && blind.has(k)) ||
+                        state.board[r][c] === me) continue;
+                    let gain = 0;
+                    for (const s of sectors) if (!oppSec.has(s)) gain++;
+                    if (!oppSec.has(SECTOR_OF(r, c))) gain++;
+                    if (oppSec.size + gain >= SECTORS_TO_WIN) winners.push([r, c]);
+                }
+                if (winners.length >= 2) result.push({ cells, empties, winners });
+            }
+        }
+    }
+    return result;
+}
+
+/* Занять пустую клетку внутри скобы — этим убиваются все варианты
+   завершения сразу. Если несколько скоб, берём клетку, покрывающую больше. */
+function bracketDefense(state, me, oppSec, blind) {
+    const dangers = dangerousBrackets(state, me, oppSec, blind);
+    if (!dangers.length) return null;
+
+    /* Если одна клетка убивает все опасные скобы сразу — берём её. */
+    let common = null;
+    for (const danger of dangers) {
+        const holes = new Set(danger.empties.map(c => key(c[0], c[1])));
+        common = common ? new Set(Array.from(common).filter(k => holes.has(k))) : holes;
+    }
+    if (common && common.size) {
+        let best = null, bestSpan = -1;
+        for (const k of common) {
+            const [r, c] = parseKey(k);
+            if (CELL_SPAN[r][c] > bestSpan) { bestSpan = CELL_SPAN[r][c]; best = [r, c]; }
+        }
+        if (best) return { place: best, fix: null };
+    }
+
+    const counts = new Map();
+    for (const danger of dangers) {
+        /* Скоба с одной пустой клеткой играется сегодня же — она важнее
+           нескольких заготовок, до которых ещё ход-другой. */
+        const urgency = Math.pow(2, 5 - danger.empties.length);
+        const add = (cell, weight) => {
+            if (state.board[cell[0]][cell[1]] !== EMPTY) return;
+            const k = key(cell[0], cell[1]);
+            counts.set(k, (counts.get(k) || 0) + weight);
+        };
+        for (const cell of danger.empties) add(cell, urgency);
+        /* Если осталось два выхода, занятие одного из них тоже убивает
+           скобу как двойную угрозу — и часто сразу для нескольких скоб. */
+        if (danger.winners.length === 2) {
+            for (const cell of danger.winners) add(cell, urgency * 0.5);
+        }
+    }
+    if (!counts.size) return null;
+
+    let best = null, bestScore = -Infinity;
+    for (const [k, count] of counts) {
+        const [r, c] = parseKey(k);
+        const score = count * 100 + CELL_SPAN[r][c] * 8 + (oppSec.has(SECTOR_OF(r, c)) ? 0 : 4);
+        if (score > bestScore) { bestScore = score; best = [r, c]; }
+    }
+    return best ? { place: best, fix: null } : null;
+}
 
 /* ---------- Разведка позиции ---------- */
 
@@ -461,19 +607,56 @@ function search(state, me, toMove, depth, alpha, beta, branch) {
     return best;
 }
 
+/* ---------- Ранги игрока ---------- */
+
+/* Ранг даётся только за органический переход: выбор уровня вручную
+   его не выдаёт. Максимальный уровень, до которого дошли серией побед, хранится
+   вместе с числом побед над 7-м режимом. */
+const RANK_BY_LEVEL = { 4: 'Новичок', 5: 'Любитель', 6: 'Опытный', 7: 'Профи' };
+const ROMAN_GLYPHS = ['', 'Ⅰ', 'Ⅱ', 'Ⅲ', 'Ⅳ', 'Ⅴ', 'Ⅵ', 'Ⅶ', 'Ⅷ', 'Ⅸ', 'Ⅹ', 'Ⅺ', 'Ⅻ'];
+
+function romanNumeral(value) {
+    const n = Math.max(1, Math.floor(value));
+    if (n < ROMAN_GLYPHS.length) return ROMAN_GLYPHS[n];
+    const table = [
+        [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'],
+        [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'],
+        [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']
+    ];
+    let rest = n;
+    let out = '';
+    for (const [amount, glyph] of table) {
+        while (rest >= amount) { out += glyph; rest -= amount; }
+    }
+    return out;
+}
+
 /* ---------- Интерфейс ---------- */
 
 const Bot = {
     /* Уровни идут от самого простого к самому сложному. Профили прежних
-       уровней сохранены и сдвинуты на один номер вверх. */
+       уровней сохранены: Простой = бывший 1, Средний = бывший 2,
+       Напряжённый = бывший «Опытный», Сложный = бывший 4. Новые ступени —
+       «Элементарный» внизу, «Умеренный» между Простым и Средним и
+       «Невыносимый» сверху с защитой от скобы. */
     LEVELS: [
-        /* Самый простой: смотрит только на ответ противника, выбирает из двух
-           кандидатов и почти не замечает неочевидных заготовок. Дебютного
-           усиления нет — играет этим профилем с первого хода. */
-        { id: 1, name: 'Простой', profile: { searchDepth: 1, rootMoves: 2,  limits: [2, 2, 2], attention: 0.05 } },
-        { id: 2, name: 'Средний', profile: { searchDepth: 2, rootMoves: 3,  limits: [4, 3, 3], attention: 0.20 } },
-        { id: 3, name: 'Опытный', profile: { searchDepth: 3, rootMoves: 8,  limits: [7, 5, 4], attention: 0.85 } },
-        { id: 4, name: 'Сложный', profile: { searchDepth: 3, rootMoves: 13, limits: [10, 6, 4], attention: 1.00 } }
+        /* randomFirst — в начале партии монетка решает, кто ходит первым. */
+        { id: 1, name: 'Элементарный', openingMoves: 0, openingProfile: 1, randomFirst: true,
+          profile: { searchDepth: 1, rootMoves: 1, limits: [1, 1, 1], attention: 0, winAttention: 0.6 } },
+        { id: 2, name: 'Простой', openingMoves: 0, openingProfile: 2, randomFirst: true,
+          profile: { searchDepth: 1, rootMoves: 2, limits: [2, 2, 2], attention: 0.05, winAttention: 1 } },
+        /* Умеренный: два дебютных хода профилем Среднего — переход без стены. */
+        { id: 3, name: 'Умеренный', openingMoves: 2, openingProfile: 4, randomFirst: true,
+          profile: { searchDepth: 1, rootMoves: 3, limits: [3, 2, 2], attention: 0.12, winAttention: 1 } },
+        { id: 4, name: 'Средний', openingMoves: 2, openingProfile: 5, randomFirst: true,
+          profile: { searchDepth: 2, rootMoves: 3, limits: [4, 3, 3], attention: 0.20, winAttention: 1 } },
+        { id: 5, name: 'Напряжённый', openingMoves: 3, openingProfile: 6, randomFirst: true,
+          profile: { searchDepth: 3, rootMoves: 8, limits: [7, 5, 4], attention: 0.85, winAttention: 1 } },
+        { id: 6, name: 'Сложный', openingMoves: 3, openingProfile: 6, randomFirst: true,
+          profile: { searchDepth: 3, rootMoves: 13, limits: [10, 6, 4], attention: 1.00, winAttention: 1 } },
+        /* Невыносимый: тот же полный перебор плюс защита от «скобы». */
+        { id: 7, name: 'Невыносимый', openingMoves: 3, openingProfile: 7, bracketGuard: true, randomFirst: true,
+          profile: { searchDepth: 3, rootMoves: 16, limits: [12, 7, 4], attention: 1.00, winAttention: 1 } }
     ],
 
     /* Сколько собственных клеток уже поставил бот: одна за ход, fix цвет не стирает. */
@@ -483,29 +666,33 @@ const Bot = {
         return count;
     },
 
-    /* Сколько первых ходов бота считаются дебютом. У Простого усиления нет;
-       Среднему достаточно двух ходов, остальным — трёх. */
+    /* Сколько первых ходов бота считаются дебютом — берём из профиля уровня. */
     openingMoves() {
-        return this.level === 1 ? 0 : this.level === 2 ? 2 : 3;
+        const found = this.LEVELS && this.LEVELS.find(l => l.id === this.level);
+        return found ? (found.openingMoves || 0) : 0;
     },
 
-    /* Дебют: профиль на один уровень выше; у верхнего уровня усиления нет. */
+    /* Дебют: профиль уровня, указанного в openingProfile (у старших — следующий). */
     profileFor(me, board) {
-        const target = this.paintedBy(me, board) < this.openingMoves()
-            ? Math.min(this.LEVELS.length, this.level + 1)
-            : this.level;
-        const found = this.LEVELS.find(l => l.id === target);
-        return found ? found.profile : this.profile;
+        const level = this.LEVELS && this.LEVELS.find(l => l.id === this.level);
+        if (!level) return this.profile;
+        if (this.paintedBy(me, board) < (level.openingMoves || 0)) {
+            const target = this.LEVELS.find(l => l.id === (level.openingProfile || level.id));
+            if (target) return target.profile;
+        }
+        return level.profile;
     },
 
     /*
        Внимательность — это не «плохой ход», а неполное восприятие позиции.
        Бот может прозевать как неочевидную чужую заготовку, так и свою хорошую
-       возможность. Готовые фигуры на третий сектор заметны всегда. Пропуск
-       детерминирован хэшем позиции и уровня, поэтому повтор позиции даёт
-       тот же результат; в дебюте внимание всегда полное.
+       возможность. Для обычных уровней ход на третий сектор заметен всегда;
+       младшие ступени могут прозевать и его — это задаёт winAttention.
+       Пропуск детерминирован хэшем позиции и уровня, поэтому повтор позиции
+       даёт тот же результат; в дебюте внимание всегда полное.
     */
-    blindCells(board, locked, me, mySec, other, oppSec, attention) {
+    blindCells(board, locked, me, mySec, other, oppSec, attention, winAttention) {
+        winAttention = winAttention == null ? 1 : winAttention;
         const blind = new Set();
         if (attention >= 1) return blind;
         const sig = boardSignature(board);
@@ -523,7 +710,7 @@ const Bot = {
         for (const o of foundOther.one) {
             const gain = gainCount(o.cells, oppSec);
             let salience = 0.55;
-            if (oppSec.size + gain >= SECTORS_TO_WIN) salience = 1;
+            if (oppSec.size + gain >= SECTORS_TO_WIN) salience = winAttention;
             else if (o.mixed && gain >= 2) salience = 0.9;
             else if (gain >= 2) salience = 0.85;
             add(o.cells, [o.spot], salience, 'one:');
@@ -532,7 +719,7 @@ const Bot = {
             if (d.empty > 3) continue;
             const gain = gainCount(d.cells, oppSec);
             let salience = d.empty === 2 ? 0.5 : 0.35;
-            if (oppSec.size + gain >= SECTORS_TO_WIN || (d.mixed && gain >= 2)) salience = 0.9;
+            if (oppSec.size + gain >= SECTORS_TO_WIN || (d.mixed && gain >= 2)) salience = Math.min(0.9, winAttention);
             add(d.cells, d.spots, salience, 'dev:');
         }
 
@@ -540,7 +727,7 @@ const Bot = {
         for (const o of foundOwn.one) {
             const gain = gainCount(o.cells, mySec);
             let salience = 0.55;
-            if (mySec.size + gain >= SECTORS_TO_WIN) salience = 1;
+            if (mySec.size + gain >= SECTORS_TO_WIN) salience = winAttention;
             else if (o.mixed && gain >= 2) salience = 0.9;
             else if (gain >= 2) salience = 0.85;
             add(o.cells, [o.spot], salience, 'myone:');
@@ -549,16 +736,19 @@ const Bot = {
             if (d.empty > 3) continue;
             const gain = gainCount(d.cells, mySec);
             let salience = d.empty === 2 ? 0.5 : 0.35;
-            if (mySec.size + gain >= SECTORS_TO_WIN || (d.mixed && gain >= 2)) salience = 0.9;
+            if (mySec.size + gain >= SECTORS_TO_WIN || (d.mixed && gain >= 2)) salience = Math.min(0.9, winAttention);
             add(d.cells, d.spots, salience, 'mydev:');
         }
 
         /* Даже если клетка «не заметена» в тонкой заготовке, мгновенную победу
-           через неё бот увидит — она важнее любого пропуска. */
-        for (const [found, sec] of [[foundOther, oppSec], [foundOwn, mySec]]) {
-            for (const o of found.one) {
-                if (sec.size + gainCount(o.cells, sec) >= SECTORS_TO_WIN) {
-                    blind.delete(key(o.spot[0], o.spot[1]));
+           через неё бот увидит — она важнее любого пропуска. На младших
+           ступенях winAttention < 1, поэтому этот козырь отключается. */
+        if (winAttention >= 1) {
+            for (const [found, sec] of [[foundOther, oppSec], [foundOwn, mySec]]) {
+                for (const o of found.one) {
+                    if (sec.size + gainCount(o.cells, sec) >= SECTORS_TO_WIN) {
+                        blind.delete(key(o.spot[0], o.spot[1]));
+                    }
                 }
             }
         }
@@ -567,15 +757,53 @@ const Bot = {
 
     lastBlind: new Set(),
 
-    STORAGE_KEY: 'toof_difficulty',
+    STORAGE_KEY: 'toof_difficulty_v2',
+    LEGACY_KEY: 'toof_difficulty',
+    /* Старые номера: 1 Простой, 2 Средний, 3 Опытный, 4 Сложный. */
+    LEGACY_IDS: { 1: 2, 2: 4, 3: 5, 4: 6 },
     STREAK_KEY: 'toof_streak',
+    RANK_KEY: 'toof_rank_v1',
     level: 1,
     streak: { wins: 0, losses: 0 },
     direction: '',
+    rankState: { maxLevel: 3, rankLevel: 0, masterWins: 0 },
+
+    /* Доступ определяется органически достигнутым рангом — простой выбор
+       уровня или старое сохранение доступ не даёт. Порог 3: Средний и выше
+       открываются только серией побед на предыдущих режимах. */
+    maxUnlockedLevel() {
+        return Math.max(3, Math.min(this.rankState.rankLevel, this.LEVELS.length));
+    },
+
+    isLevelUnlocked(level) {
+        return level <= this.maxUnlockedLevel();
+    },
+
+    rankName() {
+        if (this.rankState.masterWins > 0) {
+            return 'Мастер ' + romanNumeral(this.rankState.masterWins);
+        }
+        return RANK_BY_LEVEL[this.rankState.rankLevel] || '';
+    },
+
+    /* Возвращает сторону человека: X — человек ходит первым, O — бот. */
+    firstSide(level) {
+        const found = this.LEVELS.find(l => l.id === level) || this.LEVELS[0];
+        if (!found.randomFirst) return 'X';
+        return Math.random() < 0.5 ? 'X' : 'O';
+    },
 
     load() {
         try {
-            const value = parseInt(localStorage.getItem(this.STORAGE_KEY), 10);
+            let value = parseInt(localStorage.getItem(this.STORAGE_KEY), 10);
+            if (!(value >= 1)) {
+                /* Разовая миграция: старый номер мог называть другой режим. */
+                const legacy = parseInt(localStorage.getItem(this.LEGACY_KEY), 10);
+                if (legacy >= 1) {
+                    value = this.LEGACY_IDS[legacy] || this.LEVELS[0].id;
+                    localStorage.setItem(this.STORAGE_KEY, String(value));
+                }
+            }
             if (value >= 1) this.level = Math.min(value, this.LEVELS.length);
         } catch (e) { /* localStorage недоступен */ }
         try {
@@ -584,6 +812,22 @@ const Bot = {
                 this.streak = { wins: saved.wins, losses: saved.losses };
             }
         } catch (e) { /* ignore */ }
+        try {
+            const savedRank = JSON.parse(localStorage.getItem(this.RANK_KEY));
+            if (savedRank && Number.isInteger(savedRank.maxLevel) &&
+                Number.isInteger(savedRank.masterWins)) {
+                const rankLevel = Math.max(0, Math.min(savedRank.rankLevel || 0, 7));
+                this.rankState = {
+                    maxLevel: Math.max(3, rankLevel),
+                    rankLevel,
+                    masterWins: Math.max(0, savedRank.masterWins)
+                };
+            } else {
+                this.rankState = { maxLevel: 3, rankLevel: 0, masterWins: 0 };
+            }
+        } catch (e) {
+            this.rankState = { maxLevel: 3, rankLevel: 0, masterWins: 0 };
+        }
         this.applyLevel(this.level);
         return this.level;
     },
@@ -592,6 +836,7 @@ const Bot = {
         try {
             localStorage.setItem(this.STORAGE_KEY, String(this.level));
             localStorage.setItem(this.STREAK_KEY, JSON.stringify(this.streak));
+            localStorage.setItem(this.RANK_KEY, JSON.stringify(this.rankState));
         } catch (e) { /* ignore */ }
     },
 
@@ -604,7 +849,7 @@ const Bot = {
     },
 
     setLevel(level) {
-        if (level < 1 || level > this.LEVELS.length) return false;
+        if (level < 1 || level > this.LEVELS.length || !this.isLevelUnlocked(level)) return false;
         this.applyLevel(level);
         this.resetStreak();
         return true;
@@ -622,8 +867,10 @@ const Bot = {
         this.direction = '';
         if (draw) {
             this.resetStreak();
-            return { changed: false };
+            return { changed: false, rank: this.rankName() };
         }
+        const beforeRank = this.rankName();
+        const wonAtSeventh = humanWon && this.level === 7;
         if (humanWon) {
             this.streak.wins++;
             this.streak.losses = 0;
@@ -634,6 +881,11 @@ const Bot = {
         let changed = false;
         if (this.streak.wins >= 3 && this.level < this.LEVELS.length) {
             this.applyLevel(this.level + 1);
+            /* Только органический переход открывает следующий уровень и ранг. */
+            this.rankState.maxLevel = Math.max(this.rankState.maxLevel, this.level);
+            if (this.level >= 4) {
+                this.rankState.rankLevel = Math.max(this.rankState.rankLevel, this.level);
+            }
             this.direction = 'up';
             changed = true;
         } else if (this.streak.losses >= 3 && this.level > 1) {
@@ -641,9 +893,14 @@ const Bot = {
             this.direction = 'down';
             changed = true;
         }
+        if (wonAtSeventh) this.rankState.masterWins++;
         if (changed) this.streak = { wins: 0, losses: 0 };
         this.save();
-        return { changed, level: this.level, name: this.name(), direction: this.direction };
+        const rank = this.rankName();
+        return {
+            changed, level: this.level, name: this.name(), direction: this.direction,
+            rank, rankChanged: rank !== beforeRank ? rank : null
+        };
     },
 
     name() {
@@ -670,10 +927,13 @@ const Bot = {
         const mySec = ownedSectors(owners, me);
         const oppSec = ownedSectors(owners, other);
         const profile = this.profileFor(me, board);
+        const levelConfig = this.LEVELS.find(l => l.id === this.level);
+        const guardBracket = !!(levelConfig && levelConfig.bracketGuard);
         /* Дебютные ходы играются без тупняка: внимание полное. */
         const opening = this.paintedBy(me, board) < this.openingMoves();
         const attention = opening ? 1 : (profile.attention == null ? 1 : profile.attention);
-        const blind = this.blindCells(board, locked, me, mySec, other, oppSec, attention);
+        const winAttention = profile.winAttention == null ? 1 : profile.winAttention;
+        const blind = this.blindCells(board, locked, me, mySec, other, oppSec, attention, winAttention);
         state.blind = blind;
         this.lastBlind = blind;
         const candidates = generateMoves(state, me, profile.rootMoves);
@@ -752,6 +1012,26 @@ const Bot = {
 
         /* 2. Достройка победы: осталась одна клетка. */
         if (winOne) return { place: winOne.option.spot, fix: winOne.option.cells };
+
+        /* 3a. Только «Невыносимый»: скоба с тремя выходами в фигуру
+           неуязвима, если её построили, поэтому бот мешает построить
+           само основание. Идет раньше обычного блока: блок одной из
+           трёх точек ничего не даёт. Если есть победа в один ход
+           вне скобы — сначала закрываем её. */
+        if (guardBracket) {
+            const dangers = dangerousBrackets(state, me, oppSec, blind);
+            if (dangers.length) {
+                const bracketWin = new Set();
+                for (const danger of dangers) {
+                    for (const spot of danger.winners) bracketWin.add(key(spot[0], spot[1]));
+                }
+                const foreignWin = Array.from(winSpots).some(w => !bracketWin.has(w));
+                if (!foreignWin) {
+                    const defense = bracketDefense(state, me, oppSec, blind);
+                    if (defense) return defense;
+                }
+            }
+        }
 
         /* 3. Блок мгновенной победы противника — выбором из кандидатов поиском. */
         if (oppCanWin) {

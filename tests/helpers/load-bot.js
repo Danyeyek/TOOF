@@ -7,7 +7,7 @@ const vm = require('node:vm');
 const ROOT = path.join(__dirname, '..', '..');
 const FILES = ['js/rules.js', 'js/game-core.js', 'js/bot.js'];
 
-function loadBot() {
+function loadBot(globals) {
     const source = FILES
         .map(file => fs.readFileSync(path.join(ROOT, file), 'utf8'))
         .join('\n') + `
@@ -16,7 +16,7 @@ function loadBot() {
     BOARD_SIZE, EMPTY, SIDE_X, SIDE_O
 };`;
 
-    const sandbox = { console };
+    const sandbox = Object.assign({ console }, globals || {});
     vm.createContext(sandbox);
     vm.runInContext(source, sandbox, { filename: 'toof-bot-bundle.js' });
     return sandbox.__TOOF__;

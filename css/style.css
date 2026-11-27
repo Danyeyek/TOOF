@@ -18,9 +18,30 @@
     --o: #8b5cf6;
     --x-fill: #b45309;
     --o-fill: #6d28d9;
+    --x-bg: #b45309;
+    --o-bg: #6d28d9;
+    --x-locked: #8f5c34;
+    --o-locked: #6a44a5;
+    --x-locked-edge: #a06a3f;
+    --o-locked-edge: #7a55b0;
+    --amber-fill: #b45309;
 
     /* Подсветка действий игрока. */
     --selected: #e2e8f0;
+}
+
+/* Игрок предпочитает фиолетовый: меняем стороны цветами местами. */
+html.prefer-purple {
+    --x: #8b5cf6;
+    --o: #f59e0b;
+    --x-fill: #6d28d9;
+    --o-fill: #b45309;
+    --x-bg: #6d28d9;
+    --o-bg: #b45309;
+    --x-locked: #6a44a5;
+    --o-locked: #8f5c34;
+    --x-locked-edge: #7a55b0;
+    --o-locked-edge: #a06a3f;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -118,7 +139,7 @@ body {
 .btn-primary { background: var(--violet); border-color: var(--violet); color: #fff; }
 .btn-primary:hover { background: #6d28d9; }
 
-.btn-accent { background: var(--x-fill); border-color: var(--x-fill); color: #fff; }
+.btn-accent { background: var(--amber-fill); border-color: var(--amber-fill); color: #fff; }
 .btn-accent:hover { background: #d97706; border-color: #d97706; color: #fff; }
 
 .btn-icon { padding: 10px 14px; font-size: 1rem; }
@@ -130,6 +151,23 @@ body {
     z-index: 1;
     color: #d4d4d4;
     font-size: 2rem;
+    text-align: center;
+}
+
+/* Ранг лежит поверх существующего зазора под логотипом и не добавляет
+   высоты: отступ от названия до кнопок остаётся прежним. */
+.menu-title { position: relative; z-index: 1; }
+
+.menu-rank {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin: 0;
+    color: var(--violet-3);
+    font-size: .74rem;
+    line-height: 1;
+    letter-spacing: .3px;
     text-align: center;
 }
 
@@ -166,6 +204,41 @@ body {
     text-transform: uppercase;
 }
 
+.rank-line {
+    margin: 0;
+    color: var(--violet-3);
+    font-size: .78rem;
+    text-align: center;
+}
+
+.rank-banner {
+    position: fixed;
+    left: 50%;
+    top: 18%;
+    z-index: 70;
+    max-width: calc(100% - 32px);
+    padding: 14px 26px;
+    border: 1px solid var(--violet-2);
+    border-radius: 16px;
+    background: linear-gradient(135deg, #2a2144, #1c1830);
+    color: #efe9ff;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: .4px;
+    text-align: center;
+    box-shadow: 0 14px 40px rgba(0, 0, 0, .7);
+    pointer-events: none;
+    animation: rank-pop 2.4s ease both;
+}
+
+@keyframes rank-pop {
+    0% { opacity: 0; transform: translate(-50%, -18px) scale(.94); }
+    14% { opacity: 1; transform: translate(-50%, 0) scale(1.04); }
+    22% { transform: translate(-50%, 0) scale(1); }
+    78% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -12px) scale(.98); }
+}
+
 .difficulty-list { display: flex; flex-direction: column; gap: 4px; }
 .difficulty-option {
     padding: 8px 12px;
@@ -179,7 +252,8 @@ body {
     cursor: pointer;
     transition: background .12s linear, border-color .12s linear, color .12s linear;
 }
-.difficulty-option:hover { background: #2d2d2d; border-color: var(--violet); color: #fff; }
+.difficulty-option:hover:not(:disabled) { background: #2d2d2d; border-color: var(--violet); color: #fff; }
+.difficulty-option:disabled { opacity: .45; cursor: not-allowed; }
 .difficulty-option.is-active { border-color: var(--violet-2); background: var(--panel); color: var(--violet-3); font-weight: 700; }
 .difficulty-option:focus-visible { outline: 2px solid var(--violet-3); outline-offset: 2px; }
 
@@ -387,20 +461,20 @@ body {
     transition: background .1s linear, box-shadow .1s linear, filter .1s linear;
 }
 
-.cell.x { color: var(--x); background: #b45309; }
-.cell.o { color: var(--o); background: #6d28d9; }
+.cell.x { color: var(--x); background: var(--x-bg); }
+.cell.o { color: var(--o); background: var(--o-bg); }
 
 .cell:not(.locked):hover { filter: brightness(1.25); }
 
 /* Зафиксированная фигура сероватая, но цвет всё ещё узнаётся. */
 .cell.locked { cursor: default; }
 .cell.locked.x {
-    background: #8f5c34;
-    box-shadow: inset 0 0 0 2px #a06a3f, 0 0 6px rgba(180, 83, 9, .15);
+    background: var(--x-locked);
+    box-shadow: inset 0 0 0 2px var(--x-locked-edge), 0 0 6px rgba(180, 83, 9, .15);
 }
 .cell.locked.o {
-    background: #6a44a5;
-    box-shadow: inset 0 0 0 2px #7a55b0, 0 0 6px rgba(109, 40, 217, .15);
+    background: var(--o-locked);
+    box-shadow: inset 0 0 0 2px var(--o-locked-edge), 0 0 6px rgba(109, 40, 217, .15);
 }
 
 /* Только что закрашенная клетка: светлое кольцо поверх заливки. */

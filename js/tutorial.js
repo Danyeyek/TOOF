@@ -393,8 +393,14 @@ const Tutorial = (() => {
         if (finalAction) finalAction.hidden = true;
         if (finalButton) finalButton.hidden = true;
         if (hint) hint.hidden = true;
+        /* Кнопка обещает игру на элементарном режиме — это уровень 1. */
         if (typeof Bot !== 'undefined' && Bot && typeof Bot.setLevel === 'function') Bot.setLevel(1);
-        if (typeof UI !== 'undefined' && UI && typeof UI.start === 'function') UI.start('bot');
+        /* Обновляем подсветку режимов: иначе список в настройках может
+           показывать прежний уровень. */
+        if (typeof document !== 'undefined' && typeof CustomEvent === 'function') {
+            document.dispatchEvent(new CustomEvent('toof:difficulty'));
+        }
+        if (typeof UI !== 'undefined' && UI && typeof UI.start === 'function') UI.start('bot', { fixedFirst: true });
     }
 
     function start(container) {

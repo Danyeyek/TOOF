@@ -186,6 +186,32 @@ function figureOwner(keys, board, locked) {
     return null;
 }
 
+/* Ход может зафиксировать несколько фигур. Старый формат — одна фигура
+   плоским списком клеток; новый — список таких списков. */
+function figureList(value) {
+    if (!Array.isArray(value) || !value.length) return [];
+    if (Array.isArray(value[0]) && Array.isArray(value[0][0])) return value;
+    return [value];
+}
+
+/* Приводит одну фигуру хода к списку координат. */
+function figureCellsOf(item) {
+    if (!Array.isArray(item)) return null;
+    const cells = [];
+    const seen = new Set();
+    for (const cell of item) {
+        if (!Array.isArray(cell) || cell.length !== 2) return null;
+        const r = cell[0], c = cell[1];
+        if (!Number.isInteger(r) || !Number.isInteger(c)) return null;
+        if (r < 0 || r >= BOARD_SIZE || c < 0 || c >= BOARD_SIZE) return null;
+        const k = key(r, c);
+        if (seen.has(k)) return null;
+        seen.add(k);
+        cells.push([r, c]);
+    }
+    return cells;
+}
+
 /* ---------- Состояние партии ---------- */
 
 function makeGame() {
@@ -199,6 +225,7 @@ function makeGame() {
     selected: [],
     pending: null,
     figures: [],
+    turnFigures: [],
 
     reset() {
         this.board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(EMPTY));
@@ -210,6 +237,7 @@ function makeGame() {
         this.selected = [];
         this.pending = null;
         this.figures = [];
+        this.turnFigures = [];
     },
 
     /* Снимок только «долговечного» состояния: без pending/selected. */
@@ -238,36 +266,67 @@ function makeGame() {
             : groupsFromOwners(snapshot.locked || [], snapshot.owners || []);
         this.selected = [];
         this.pending = null;
+        this.turnFigures = [];
         return true;
     },
 
-    /* Применить сетевой ход { place:[r,c], fix:[[r,c],...]|null }.
-       Вызывать только на чистом состоянии: pending/selected должны быть пусты. */
+    /* Применить сетевой ход { place:[r,c]|null, fix:[[[r,c],...], ...]|null }.
+       place может быть null только у победной фигуры, закрытой до закрашивания.
+       Старый формат с одной фигурой тоже понимается. Вызывать только на
+       чистом состоянии: pending/selected должны быть пусты. */
     applyMove(move) {
         if (this.over) return { ok: false, reason: 'over' };
-        if (!move || !Array.isArray(move.place) || move.place.length !== 2) {
-            return { ok: false, reason: 'place' };
-        }
-        if (!this.place(move.place[0], move.place[1])) {
+        if (!move) return { ok: false, reason: 'place' };
+
+        const hasPlace = Array.isArray(move.place) && move.place.length === 2;
+        const figures = figureList(move.fix);
+        if (!hasPlace && !figures.length) return { ok: false, reason: 'place' };
+        if (hasPlace && !this.place(move.place[0], move.place[1])) {
             return { ok: false, reason: 'place' };
         }
 
-        if (move.fix && move.fix.length) {
-            if (move.fix.length !== 4 && move.fix.length !== 6) {
+        const declarers = [];
+        for (const item of figures) {
+            const cells = figureCellsOf(item);
+            if (!cells) return { ok: false, reason: 'fix' };
+            if (cells.length !== 4 && cells.length !== 6) {
                 return { ok: false, reason: 'size' };
             }
-            for (const cell of move.fix) {
-                if (!Array.isArray(cell) || !this.toggle(cell[0], cell[1])) {
-                    return { ok: false, reason: 'fix' };
-                }
+            for (const [r, c] of cells) {
+                if (!this.toggle(r, c)) return { ok: false, reason: 'fix' };
             }
             const result = this.fix();
-            if (!result.ok) return result;
-            return Object.assign({}, result, { draw: this.checkDraw() });
+            if (!result.ok) return { ok: false, reason: result.reason };
+            declarers.push(result.declarer);
+
+            /* Победа фиксируется сразу, без закрашивания и подтверждения. */
+            if (this.over) {
+                this.pending = null;
+                this.turnFigures = [];
+                return {
+                    ok: true,
+                    reason: null,
+                    declarer: result.declarer,
+                    declarers,
+                    winner: this.winner,
+                    draw: false
+                };
+            }
         }
 
-        if (!this.confirm()) return { ok: false, reason: 'confirm' };
-        return { ok: true, reason: null, draw: this.checkDraw() };
+        /* Ход без закрашенной клетки возможен только победной фигурой. */
+        if (!hasPlace) return { ok: false, reason: 'confirm' };
+
+        const result = this.confirm();
+        if (!result.ok) return { ok: false, reason: 'confirm' };
+        return {
+            ok: true,
+            reason: null,
+            declarer: declarers[declarers.length - 1] || null,
+            declarers,
+            winner: result.winner,
+            draw: result.draw
+        };
     },
 
     at(r, c) { return this.board[r][c]; },
@@ -297,7 +356,9 @@ function makeGame() {
         return false;
     },
 
-    /* Закрасить клетку цветом текущего игрока (или перенести уже закрашенную). */
+    /* Закрасить клетку цветом текущего игрока (или перенести уже закрашенную).
+       За один ход красится ровно одна клетка: второй вызов переносит её,
+       а если она уже вошла в фигуру — просто не допускается. */
     place(r, c) {
         if (this.over) return false;
         if (r < 0 || r >= BOARD_SIZE || c < 0 || c >= BOARD_SIZE) return false;
@@ -305,9 +366,12 @@ function makeGame() {
 
         if (this.pending) {
             const [pr, pc] = this.pending;
+            if (this.isLocked(pr, pc)) return false;
             this.board[pr][pc] = EMPTY;
+            const pk = key(pr, pc);
+            const at = this.selected.indexOf(pk);
+            if (at !== -1) this.selected.splice(at, 1);
             this.pending = null;
-            this.selected = [];
         }
 
         this.board[r][c] = this.current;
@@ -315,9 +379,10 @@ function makeGame() {
         return true;
     },
 
-    /* Добавить/убрать клетку из выделения. Только после закрашивания. */
+    /* Добавить/убрать клетку из выделения. Не зависит от закрашивания:
+       фигуру можно выбрать и до хода, и после него. */
     toggle(r, c) {
-        if (this.over || !this.pending) return false;
+        if (this.over) return false;
         if (r < 0 || r >= BOARD_SIZE || c < 0 || c >= BOARD_SIZE) return false;
         if (this.board[r][c] === EMPTY || this.isLocked(r, c)) return false;
 
@@ -334,10 +399,11 @@ function makeGame() {
 
     clearSelection() { this.selected = []; },
 
-    /* Зафиксировать выделенную фигуру. Возвращает {ok, reason?, declarer?, winner?}. */
+    /* Зафиксировать выделенную фигуру. Ход НЕ переходит: его ещё нужно
+       завершить кнопкой после закрашивания клетки. За ход можно зафиксировать
+       несколько фигур — в том числе до закрашивания. */
     fix() {
         if (this.over) return { ok: false, reason: 'over' };
-        if (!this.pending) return { ok: false, reason: 'no-move' };
         if (this.selected.length !== 4 && this.selected.length !== 6) {
             return { ok: false, reason: 'size' };
         }
@@ -351,21 +417,50 @@ function makeGame() {
             this.owners.set(k, declarer);
         }
         this.figures.push({ owner: declarer, cells });
-        this.pending = null;
+        this.turnFigures.push({ owner: declarer, cells });
         this.selected = [];
 
+        /* Победная фигура завершает партию сразу, даже если клетка ещё
+           не закрашена — ждать подтверждения хода не нужно. */
         const winner = this.checkVictory(declarer);
-        if (!winner) this.next();
-        return { ok: true, declarer, winner };
+        if (winner) {
+            this.pending = null;
+            return { ok: true, declarer, winner };
+        }
+        return { ok: true, declarer };
     },
 
-    /* Подтвердить ход без фиксации. */
+    /* Полное выделение при завершении хода фиксируется; неполное снимается. */
+    settleSelection() {
+        if (!this.selected.length) return null;
+        const result = this.fix();
+        if (!result.ok) this.clearSelection();
+        return result;
+    },
+
+    /* Завершить ход. Переход хода возможен только после закрашивания клетки. */
     confirm() {
-        if (this.over || !this.pending) return false;
+        if (this.over) return { ok: false, reason: 'over' };
+        if (!this.pending) return { ok: false, reason: 'no-move' };
+        const settled = this.settleSelection();
+        if (this.over) {
+            this.pending = null;
+            this.turnFigures = [];
+            this.selected = [];
+            return {
+                ok: true,
+                winner: this.winner,
+                draw: false,
+                fixed: settled && settled.ok ? [settled.declarer] : []
+            };
+        }
+        const winner = this.checkVictory(this.current);
+        const draw = !winner && this.checkDraw();
         this.pending = null;
+        this.turnFigures = [];
         this.selected = [];
-        this.next();
-        return true;
+        if (!winner && !draw) this.next();
+        return { ok: true, winner, draw, fixed: settled && settled.ok ? [settled.declarer] : [] };
     },
 
     next() {

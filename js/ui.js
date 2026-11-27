@@ -68,6 +68,9 @@ const UI = (() => {
         if (state.mode === 'online') {
             return symbol === state.mySide ? t('Вы') : state.opponentName;
         }
+        if (state.mode === 'bot') {
+            return symbol === state.human ? t('Вы') : t('Бот');
+        }
         return t(NAMES[state.mode][symbol]);
     }
 
@@ -80,7 +83,9 @@ const UI = (() => {
     }
 
     function ariaCell(r, c, value) {
-        const what = t(value === 'X' ? 'оранжевая' : value === 'O' ? 'фиолетовая' : 'пусто');
+        const swapped = document.documentElement.classList.contains('prefer-purple');
+        const orange = value === 'X' ? !swapped : swapped;
+        const what = t(value === EMPTY ? 'пусто' : orange ? 'оранжевая' : 'фиолетовая');
         let extra = '';
         if (Game.isLocked(r, c)) extra = t(', зафиксировано');
         else if (Game.isSelected(r, c)) extra = t(', выделено');
@@ -137,6 +142,9 @@ const UI = (() => {
     }
 
     function render() {
+        const colorSide = state.mode === 'local' ? 'X'
+            : state.mode === 'online' ? state.mySide : state.human;
+        Colors.applyFor(colorSide);
         renderBoard();
 
         $('xName').textContent = nameOf('X');
@@ -157,8 +165,10 @@ const UI = (() => {
         }
 
         const canAct = canActNow();
-        $('fixFigureBtn').hidden = !(canAct && Game.pending && Game.selected.length > 0);
-        $('confirmMoveBtn').hidden = !(canAct && Game.pending && Game.selected.length === 0);
+        /* Выделение фигуры не привязано к закрашиванию; завершить ход можно
+           только после того, как клетка закрашена. */
+        $('fixFigureBtn').hidden = !(canAct && Game.selected.length > 0);
+        $('confirmMoveBtn').hidden = !(canAct && !!Game.pending);
         $('resetButton').hidden = !Game.over || state.mode === 'online';
         $('settingsButton').hidden = state.mode !== 'bot';
         if (state.mode !== 'bot') closeSettings();
@@ -182,13 +192,18 @@ const UI = (() => {
         }
 
         $('modeIndicator').textContent = state.mode === 'bot'
-            ? t('Против бота · ') + t(Bot.name())
+            ? t('Против бота · ') + t(Bot.name()) +
+                (Bot.rankName() ? ' · ' + rankLabel(Bot.rankName()) : '')
             : state.mode === 'online'
                 ? t('По сети · против ') + state.opponentName
                 : t('На одном экране');
     }
 
     function finish(winner) {
+        /* Одна партия = один результат. Повторный вызов не должен дважды
+           двигать серию побед/поражений и автопереключать сложность. */
+        if (state.finished) return;
+        state.finished = true;
         Game.over = true;
         Game.winner = winner;
 
@@ -231,6 +246,11 @@ const UI = (() => {
             }
             if (typeof CustomEvent === 'function') {
                 document.dispatchEvent(new CustomEvent('toof:difficulty'));
+                if (result.rankChanged) {
+                    document.dispatchEvent(new CustomEvent('toof:rank', {
+                        detail: { rank: result.rankChanged }
+                    }));
+                }
             }
         } else if (winner) {
             Sound.play('win');
@@ -264,17 +284,15 @@ const UI = (() => {
             let fixed = false;
             if (decision.fix) {
                 for (const cell of decision.fix) Game.toggle(cell[0], cell[1]);
-                fixed = Game.fix().ok;
+                const result = Game.fix();
+                fixed = result.ok;
+                if (!fixed) Game.clearSelection();
             }
             if (fixed) Sound.play('figure');
-            else Game.confirm();
+            if (!Game.over) Game.confirm();
 
             if (Game.over) {
                 finish(Game.winner);
-                return;
-            }
-            if (Game.checkDraw()) {
-                finish(null);
                 return;
             }
             setMessage(fixed ? 'Бот зафиксировал фигуру. Ваш ход.' : 'Ваш ход.');
@@ -295,7 +313,8 @@ const UI = (() => {
     /* Смену сложности можно применить сразу до первого хода и после конца партии. */
     function canChangeDifficulty() {
         return state.mode === 'bot' && (Game.over ||
-            !Game.board.some(row => row.some(value => value !== EMPTY)));
+            (!Game.figures.length &&
+             !Game.board.some(row => row.some(value => value !== EMPTY))));
     }
 
     function cellClick(r, c) {
@@ -303,17 +322,18 @@ const UI = (() => {
         if (r < 0 || r >= BOARD_SIZE || c < 0 || c >= BOARD_SIZE) return;
 
         if (Game.board[r][c] === EMPTY) {
-            if (!Game.place(r, c)) return;
+            if (!Game.place(r, c)) {
+                if (Game.pending && Game.isLocked(Game.pending[0], Game.pending[1])) {
+                    setMessage('В этом ходу уже закрашена клетка.');
+                }
+                return;
+            }
             Sound.play('place');
-            setMessage('Клетка закрашена. Подтвердите ход или выделите фигуру.');
+            setMessage('Клетка закрашена. Можно зафиксировать фигуру и завершить ход.');
             render();
             return;
         }
 
-        if (!Game.pending) {
-            setMessage('Сначала закрасьте клетку.');
-            return;
-        }
         if (!Game.toggle(r, c)) {
             if (Game.selected.length >= MAX_FIGURE) {
                 setMessage(t('В фигуре не больше {n} клеток.', { n: MAX_FIGURE }));
@@ -331,6 +351,8 @@ const UI = (() => {
 
     function onlineCommit() {
         if (!state.session) return;
+        const settled = Game.settleSelection();
+        if (settled && settled.ok) Sound.play('figure');
         const move = NetProtocol.moveFromGame(Game);
         if (!move) {
             setMessage('Сначала закрасьте клетку.');
@@ -341,6 +363,8 @@ const UI = (() => {
         if (!check.ok) {
             const reasons = {
                 size: 'Неправильная фигура.',
+                fix: 'Неправильная фигура.',
+                shape: 'Неправильная фигура.',
                 'not-a-figure': 'Неправильная фигура.',
                 place: 'Эта клетка уже занята.',
                 turn: 'Сейчас не ваш ход.',
@@ -369,14 +393,9 @@ const UI = (() => {
 
     function onFix() {
         if (!canActNow()) return;
-        if (state.mode === 'online') {
-            onlineCommit();
-            return;
-        }
         const result = Game.fix();
         if (!result.ok) {
             const reasons = {
-                'no-move': 'Сначала закрасьте клетку.',
                 size: 'Неправильная фигура.',
                 'not-a-figure': 'Неправильная фигура.',
                 over: 'Игра уже закончена.'
@@ -389,17 +408,12 @@ const UI = (() => {
 
         Sound.play('figure');
         if (result.winner) {
+            if (state.mode === 'online') onlineCommit();
             finish(result.winner);
             return;
         }
-        if (Game.checkDraw()) {
-            finish(null);
-            return;
-        }
-
-        setMessage(t('Фигура зафиксирована. Ход переходит к ') + nameOf(Game.current) + '.');
+        setMessage('Фигура зафиксирована. Ход не переходит — закрасьте клетку и завершите ход.');
         render();
-        scheduleBot();
     }
 
     function onConfirm() {
@@ -408,10 +422,16 @@ const UI = (() => {
             onlineCommit();
             return;
         }
-        if (!Game.confirm()) return;
+        const result = Game.confirm();
+        if (!result.ok) return;
         Sound.play('confirm');
+        if (result.fixed && result.fixed.length) Sound.play('figure');
 
-        if (Game.checkDraw()) {
+        if (result.winner) {
+            finish(result.winner);
+            return;
+        }
+        if (result.draw) {
             finish(null);
             return;
         }
@@ -420,13 +440,17 @@ const UI = (() => {
         scheduleBot();
     }
 
-    function start(mode) {
+    function start(mode, opts) {
         if (state.session) {
             if (typeof Lobby !== 'undefined') Lobby.leave(state.session);
             state.session = null;
         }
         state.mode = mode;
-        state.human = 'X';
+        /* В бот-режиме сторону первого хода задаёт уровень (см. Bot.firstSide).
+           Обучение всегда начинает человек. */
+        state.human = mode === 'bot' && !(opts && opts.fixedFirst)
+            ? Bot.firstSide(Bot.level)
+            : 'X';
         state.awaitingEcho = false;
         state.onlineStatus = 'active';
         state.finished = false;
@@ -436,10 +460,17 @@ const UI = (() => {
         state.resumable = false;
         clearTimeout(state.botTimer);
         Game.reset();
-        setMessage(mode === 'bot' ? 'Вы ходите первым (оранжевым).' : 'Первым ходит оранжевый — Игрок 1.');
+        if (mode === 'bot') {
+            setMessage(state.human === 'X'
+                ? 'Вы ходите первым (оранжевым).'
+                : 'Бот ходит первым (оранжевым). Вы — фиолетовый.');
+        } else {
+            setMessage('Первым ходит оранжевый — Игрок 1.');
+        }
         $('difficultyConfirm').hidden = true;
         showScreen('gameScreen');
         render();
+        if (mode === 'bot' && Game.current !== state.human) scheduleBot();
     }
 
     function startOnline(session) {
@@ -470,7 +501,8 @@ const UI = (() => {
         const boardChanged = (data.appliedPly || 0) !== previousPly;
         /* Не стираем незавершённый выбор игрока из-за служебного
            обновления документа партии (статус, presence и т. п.). */
-        const busy = !!Game.pending || state.awaitingEcho;
+        const busy = !!Game.pending || !!Game.selected.length ||
+            !!Game.turnFigures.length || state.awaitingEcho;
         if (boardChanged || !busy) Game.restore(data.snapshot);
         state.mySide = data.mySide || state.mySide;
         state.opponentName = data.opponentName || state.opponentName;
@@ -495,8 +527,7 @@ const UI = (() => {
 
         render();
 
-        if (data.snapshot && data.snapshot.over && !state.finished) {
-            state.finished = true;
+        if (data.snapshot && data.snapshot.over) {
             finish(data.winner || null);
         }
     }
@@ -567,6 +598,10 @@ const UI = (() => {
             button.setAttribute('aria-expanded', String(!popover.hidden));
             /* При повторном нажатии снимаем фокус/подсветку кнопки. */
             if (popover.hidden) button.blur();
+            /* Список всегда показывает реально используемый режим бота. */
+            else if (typeof CustomEvent === 'function') {
+                document.dispatchEvent(new CustomEvent('toof:difficulty'));
+            }
         });
         $('settingsClose').addEventListener('click', () => {
             Sound.play('click');
