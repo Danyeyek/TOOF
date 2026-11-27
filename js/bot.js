@@ -30,8 +30,30 @@ function sectorSpan(cells) {
 const PROFILE = {
     searchDepth: 3,
     rootMoves: 14,
-    limits: [10, 6, 4]
+    limits: [10, 6, 4],
+    attention: 1
 };
+
+/* Детерминированный хэш: одна и та же позиция даёт одни и те же «пропуски»,
+   поэтому бенчмарки воспроизводимы и не зависят от Math.random. */
+function hashOf(text) {
+    let h = 2166136261;
+    for (let i = 0; i < text.length; i++) {
+        h ^= text.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+}
+
+function boardSignature(board) {
+    let text = '';
+    for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+            if (board[r][c] !== EMPTY) text += key(r, c) + board[r][c] + ';';
+        }
+    }
+    return hashOf(text);
+}
 
 /* ---------- Шаблоны фигур ---------- */
 
@@ -88,7 +110,7 @@ const CELL_SPAN = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fil
 
 /* ---------- Разведка позиции ---------- */
 
-function scan(board, locked, me) {
+function scan(board, locked, me, blind) {
     const other = OTHER_OF[me];
     const complete = [];
     const one = [];
@@ -108,7 +130,10 @@ function scan(board, locked, me) {
                 for (let i = 0; i < tpl.cells.length; i++) {
                     const r = ar + tpl.cells[i][0];
                     const c = ac + tpl.cells[i][1];
-                    if (locked.has(key(r, c))) { bad = true; break; }
+                    if (locked.has(key(r, c)) || (blind && blind.has(key(r, c)))) {
+                        bad = true;
+                        break;
+                    }
                     const value = board[r][c];
 
                     if (tpl.owners[i] === 'other') {
@@ -242,8 +267,9 @@ function generateMoves(state, me, limit) {
     const other = OTHER_OF[me];
     const mySec = ownedSectors(state.owners, me);
     const oppSec = ownedSectors(state.owners, other);
-    const my = scan(board, locked, me);
-    const opp = scan(board, locked, other);
+    const blind = state.blind;
+    const my = scan(board, locked, me, blind);
+    const opp = scan(board, locked, other, blind);
 
     const threatCells = new Set(opp.threats.keys());
     const critical = new Set();
@@ -335,6 +361,7 @@ function applyMove(state, move, me) {
     const board = state.board.map(row => row.slice());
     const locked = new Set(state.locked);
     const owners = new Map(state.owners);
+    const blind = state.blind ? new Set(state.blind) : null;
     const [r, c] = move.place;
     board[r][c] = me;
     if (move.fix) {
@@ -344,7 +371,7 @@ function applyMove(state, move, me) {
             owners.set(k, me);
         }
     }
-    return { board, locked, owners };
+    return { board, locked, owners, blind };
 }
 
 function terminalScore(state, me) {
@@ -361,8 +388,8 @@ function evaluate(state, me) {
     const oppSec = ownedSectors(state.owners, other);
     let score = (mySec.size - oppSec.size) * 2000;
 
-    const my = scan(state.board, state.locked, me);
-    const opp = scan(state.board, state.locked, other);
+    const my = scan(state.board, state.locked, me, state.blind);
+    const opp = scan(state.board, state.locked, other, state.blind);
 
     let ready = 0, danger = 0, threat = 0, risk = 0;
     for (const cells of my.complete) {
@@ -438,12 +465,9 @@ function search(state, me, toMove, depth, alpha, beta, branch) {
 
 const Bot = {
     LEVELS: [
-        { id: 1, name: 'Простой',     profile: { searchDepth: 2, rootMoves: 3,  limits: [4, 3, 3] } },
-        { id: 2, name: 'Средний',     profile: { searchDepth: 3, rootMoves: 4,  limits: [3, 2, 2] } },
-        { id: 3, name: 'Опытный',     profile: { searchDepth: 3, rootMoves: 6,  limits: [5, 3, 3] } },
-        { id: 4, name: 'Сложный',     profile: { searchDepth: 3, rootMoves: 8,  limits: [7, 5, 4] } },
-        { id: 5, name: 'Эксперт',     profile: { searchDepth: 3, rootMoves: 11, limits: [10, 6, 4] } },
-        { id: 6, name: 'Мастер',      profile: { searchDepth: 3, rootMoves: 13, limits: [10, 6, 4] } }
+        { id: 1, name: 'Простой', profile: { searchDepth: 2, rootMoves: 3,  limits: [4, 3, 3], attention: 0.20 } },
+        { id: 2, name: 'Средний', profile: { searchDepth: 3, rootMoves: 8,  limits: [7, 5, 4], attention: 0.85 } },
+        { id: 3, name: 'Опытный', profile: { searchDepth: 3, rootMoves: 13, limits: [10, 6, 4], attention: 1.00 } }
     ],
 
     /* Сколько собственных клеток уже поставил бот: одна за ход, fix цвет не стирает. */
@@ -453,16 +477,89 @@ const Bot = {
         return count;
     },
 
-    /* Дебют: профиль на два уровня выше. У предпоследнего уровня это даёт +1,
-       у последнего — 0; Простому достаточно двух крутых ходов, остальным — трёх. */
+    /* Сколько первых ходов бота считаются дебютом. */
+    openingMoves() {
+        return this.level === 1 ? 2 : 3;
+    },
+
+    /* Дебют: профиль на один уровень выше; у верхнего уровня усиления нет.
+       Простому достаточно двух крутых ходов, остальным — трёх. */
     profileFor(me, board) {
-        const openingMoves = this.level === 1 ? 2 : 3;
-        const target = this.paintedBy(me, board) < openingMoves
-            ? Math.min(this.LEVELS.length, this.level + 2)
+        const target = this.paintedBy(me, board) < this.openingMoves()
+            ? Math.min(this.LEVELS.length, this.level + 1)
             : this.level;
         const found = this.LEVELS.find(l => l.id === target);
         return found ? found.profile : this.profile;
     },
+
+    /*
+       Внимательность — это не «плохой ход», а неполное восприятие позиции.
+       Бот может прозевать как неочевидную чужую заготовку, так и свою хорошую
+       возможность. Готовые фигуры на третий сектор заметны всегда. Пропуск
+       детерминирован хэшем позиции и уровня, поэтому повтор позиции даёт
+       тот же результат; в дебюте внимание всегда полное.
+    */
+    blindCells(board, locked, me, mySec, other, oppSec, attention) {
+        const blind = new Set();
+        if (attention >= 1) return blind;
+        const sig = boardSignature(board);
+        const foundOther = scan(board, locked, other);
+        const foundOwn = scan(board, locked, me);
+
+        const add = (cells, spots, salience, prefix) => {
+            if (salience >= 1) return;
+            const chance = (1 - attention) * (1 - salience);
+            const id = prefix + cells.map(p => key(p[0], p[1])).sort().join('|');
+            if ((hashOf(id + '|' + sig + '|' + this.level) % 100000) / 100000 >= chance) return;
+            for (const [r, c] of spots) blind.add(key(r, c));
+        };
+
+        for (const o of foundOther.one) {
+            const gain = gainCount(o.cells, oppSec);
+            let salience = 0.55;
+            if (oppSec.size + gain >= SECTORS_TO_WIN) salience = 1;
+            else if (o.mixed && gain >= 2) salience = 0.9;
+            else if (gain >= 2) salience = 0.85;
+            add(o.cells, [o.spot], salience, 'one:');
+        }
+        for (const d of foundOther.developing) {
+            if (d.empty > 3) continue;
+            const gain = gainCount(d.cells, oppSec);
+            let salience = d.empty === 2 ? 0.5 : 0.35;
+            if (oppSec.size + gain >= SECTORS_TO_WIN || (d.mixed && gain >= 2)) salience = 0.9;
+            add(d.cells, d.spots, salience, 'dev:');
+        }
+
+        /* Свои возможности бот тоже может прозевать — но не мгновенную победу. */
+        for (const o of foundOwn.one) {
+            const gain = gainCount(o.cells, mySec);
+            let salience = 0.55;
+            if (mySec.size + gain >= SECTORS_TO_WIN) salience = 1;
+            else if (o.mixed && gain >= 2) salience = 0.9;
+            else if (gain >= 2) salience = 0.85;
+            add(o.cells, [o.spot], salience, 'myone:');
+        }
+        for (const d of foundOwn.developing) {
+            if (d.empty > 3) continue;
+            const gain = gainCount(d.cells, mySec);
+            let salience = d.empty === 2 ? 0.5 : 0.35;
+            if (mySec.size + gain >= SECTORS_TO_WIN || (d.mixed && gain >= 2)) salience = 0.9;
+            add(d.cells, d.spots, salience, 'mydev:');
+        }
+
+        /* Даже если клетка «не заметена» в тонкой заготовке, мгновенную победу
+           через неё бот увидит — она важнее любого пропуска. */
+        for (const [found, sec] of [[foundOther, oppSec], [foundOwn, mySec]]) {
+            for (const o of found.one) {
+                if (sec.size + gainCount(o.cells, sec) >= SECTORS_TO_WIN) {
+                    blind.delete(key(o.spot[0], o.spot[1]));
+                }
+            }
+        }
+        return blind;
+    },
+
+    lastBlind: new Set(),
 
     STORAGE_KEY: 'toof_difficulty',
     STREAK_KEY: 'toof_streak',
@@ -567,11 +664,17 @@ const Bot = {
         const mySec = ownedSectors(owners, me);
         const oppSec = ownedSectors(owners, other);
         const profile = this.profileFor(me, board);
+        /* Дебютные ходы играются без тупняка: внимание полное. */
+        const opening = this.paintedBy(me, board) < this.openingMoves();
+        const attention = opening ? 1 : (profile.attention == null ? 1 : profile.attention);
+        const blind = this.blindCells(board, locked, me, mySec, other, oppSec, attention);
+        state.blind = blind;
+        this.lastBlind = blind;
         const candidates = generateMoves(state, me, profile.rootMoves);
         if (!candidates.length) return null;
 
-        const own = scan(board, locked, me);
-        const enemy = scan(board, locked, other);
+        const own = scan(board, locked, me, blind);
+        const enemy = scan(board, locked, other, blind);
 
         /* Лучшая готовая фигура и лучшая фигура в одну клетку. */
         let readyFigure = null, readyGain = 0;
@@ -618,7 +721,7 @@ const Bot = {
         const leavesWin = (place, fix) => {
             const next = applyMove(state, { place, fix: fix || null }, me);
             const sec = ownedSectors(next.owners, other);
-            return scan(next.board, next.locked, other).one.some(o =>
+            return scan(next.board, next.locked, other, state.blind).one.some(o =>
                 sec.size + gainCount(o.cells, sec) >= SECTORS_TO_WIN);
         };
 

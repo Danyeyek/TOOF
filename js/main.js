@@ -517,9 +517,11 @@ async function initOnline() {
 /* ---------- Инициализация ---------- */
 
 document.addEventListener('DOMContentLoaded', () => {
-    $('rulesText').innerHTML = RULES_TEXT +
-        '<h3>🧩 Базовые фигуры</h3>' + figureCards(BASE_FIGURES) +
-        '<h3>🧩 Диагональные фигуры</h3>' + figureCards(DIAGONAL_FIGURES);
+    Tutorial.start($('rulesText'));
+    $('tutorialPlayBot').addEventListener('click', () => {
+        Sound.play('click');
+        Tutorial.play();
+    });
     $('donateText').innerHTML = DONATE_TEXT;
     $('cheatSheet').innerHTML = figureCards(BASE_FIGURES);
     $('versionDisplay').textContent = 'v' + VERSION;
@@ -588,7 +590,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 UI.showScreen('onlineScreen');
                 updateAccountHint();
                 renderInvites();
-            } else UI.showScreen(action + 'Screen');
+            } else {
+                if (action === 'rules') Tutorial.start($('rulesText'));
+                UI.showScreen(action + 'Screen');
+            }
         });
     });
 

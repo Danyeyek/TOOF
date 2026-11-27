@@ -436,28 +436,77 @@ body {
 .rules a { color: var(--violet-2); }
 .rules .cards { margin: 10px 0; }
 
-/* ---------- Интерактивные правила (раздел «Правила») ---------- */
-.tutorial-step {
-    width: 100%;
-    animation: tutorial-in 0.45s ease both;
-}
-
+/* ---------- Анимированный рассказ о правилах ---------- */
+.tutorial-stage { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; }
+.tutorial-copy { width: 100%; text-align: center; }
+.tutorial-copy.copy-in { animation: tutorial-in 0.5s ease both; }
 @keyframes tutorial-in {
-    from { opacity: 0; transform: translateY(12px); }
+    from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
 }
+.tutorial-title { color: #d4d4d4; font-size: 1.15rem; margin: 8px 0 6px; }
+.tutorial-caption { color: var(--green); font-size: .9rem; font-weight: 600; margin-bottom: 6px; }
+.tutorial-text { color: #bbb; font-size: .9rem; line-height: 1.6; }
 
-.tutorial-title { color: #d4d4d4; font-size: 1.15rem; text-align: center; margin: 14px 0 8px; }
-.tutorial-text { color: #bbb; font-size: .9rem; line-height: 1.6; text-align: center; }
-.tutorial-text ul { margin: 8px auto 0; padding-left: 20px; display: inline-block; text-align: left; }
+.tutorial-board { width: 100%; max-width: 340px; margin: 0 auto; }
+.tutorial-grid .cell { animation: tutorial-cell-in 0.4s ease both; }
+@keyframes tutorial-cell-in {
+    from { opacity: 0; transform: scale(0.7); }
+    to { opacity: 1; transform: scale(1); }
+}
+.tutorial-sector {
+    position: absolute;
+    z-index: 6;
+    pointer-events: none;
+    border: 2px solid rgba(245, 158, 11, .8);
+    border-radius: 18px;
+    background: linear-gradient(135deg, rgba(245, 158, 11, .26) 0%, rgba(139, 92, 246, .32) 55%, rgba(124, 58, 237, .36) 100%);
+    box-shadow: 0 0 20px rgba(139, 92, 246, .28), inset 0 0 24px rgba(124, 58, 237, .18);
+    opacity: 0;
+    transform: scale(.94);
+    transition: opacity .45s ease, transform .45s ease;
+}
+.tutorial-sector.is-lit {
+    opacity: 1;
+    transform: scale(1);
+    animation: sector-breathe 2.4s ease-in-out .45s infinite;
+}
+.tutorial-sector[data-sector="0"] { top: 0; left: 0; width: calc(50% - 1.5px); height: calc(50% - 1.5px); }
+.tutorial-sector[data-sector="1"] { top: 0; left: calc(50% + 1.5px); width: calc(50% - 1.5px); height: calc(50% - 1.5px); }
+.tutorial-sector[data-sector="2"] { top: calc(50% + 1.5px); left: 0; width: calc(50% - 1.5px); height: calc(50% - 1.5px); }
+.tutorial-sector[data-sector="3"] { top: calc(50% + 1.5px); left: calc(50% + 1.5px); width: calc(50% - 1.5px); height: calc(50% - 1.5px); }
+@keyframes sector-breathe {
+    0%, 100% { box-shadow: 0 0 20px rgba(139, 92, 246, .28), inset 0 0 24px rgba(124, 58, 237, .18); }
+    50% { box-shadow: 0 0 32px rgba(139, 92, 246, .5), inset 0 0 32px rgba(124, 58, 237, .3); }
+}
+.tutorial-grid .cell.pending { animation: pending-pulse 1.4s ease-in-out infinite; }
+.tutorial-grid .cell.figure-in { animation: figure-pop 0.45s ease both; }
+@keyframes figure-pop {
+    from { opacity: 0; transform: scale(0.3); }
+    70% { transform: scale(1.15); }
+    to { opacity: 1; transform: scale(1); }
+}
 
-.tutorial-nav { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 16px; }
-.tutorial-dots { display: flex; gap: 6px; justify-content: center; margin-top: 10px; }
-.tutorial-dots span { width: 8px; height: 8px; border-radius: 50%; background: #444; }
-.tutorial-dots span.is-active { background: var(--violet-2); }
+.tutorial-gallery { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; }
+.tutorial-gallery__label { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .6px; }
+.tutorial-gallery__row { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: 100%; }
+.gallery-card { animation: tutorial-in 0.5s ease both; }
+.gallery-card:nth-child(2) { animation-delay: 0.1s; }
+.gallery-card:nth-child(3) { animation-delay: 0.2s; }
+.gallery-card:nth-child(4) { animation-delay: 0.3s; }
+.gallery-card:nth-child(5) { animation-delay: 0.4s; }
+.gallery-card:nth-child(6) { animation-delay: 0.5s; }
+.gallery-card:nth-child(7) { animation-delay: 0.6s; }
+.gallery-card:nth-child(8) { animation-delay: 0.7s; }
+.demo i { animation: demo-in 0.35s ease both; }
+@keyframes demo-in {
+    from { opacity: 0; transform: scale(0.5); }
+    to { opacity: 1; transform: scale(1); }
+}
 
-.tutorial-final { display: flex; justify-content: center; margin-top: 18px; }
+.tutorial-final { display: flex; justify-content: center; margin-top: 14px; animation: tutorial-in 0.5s ease both; }
 .tutorial-final .btn { padding: 12px 22px; font-size: 0.9rem; }
+.tutorial-hint { color: var(--muted); font-size: .72rem; text-align: center; }
 
 /* ---------- Онлайн ---------- */
 .badge {
