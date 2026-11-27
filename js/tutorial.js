@@ -102,14 +102,40 @@ const Tutorial = (() => {
             '<div class="tutorial-gallery__row">' + DIAGONAL_FIGURES.map(figureCard).join('') + '</div>' +
             '</div>' +
             '<p class="tutorial-hint" id="tutorialHint">' + t('Нажмите на экран, чтобы продолжить · через 15 секунд рассказ пойдёт сам') + '</p>' +
+            '<button class="btn btn-primary btn-mini tutorial-confirm" id="tutorialConfirm" type="button" hidden>' +
+            t('Подтвердить') + '</button>' +
             '</div>';
         grid = document.getElementById('tutGrid');
         gallery = document.getElementById('tutGallery');
+        const confirm = document.getElementById('tutorialConfirm');
+        if (confirm && !confirm.dataset.tutorialConfirmBound) {
+            confirm.dataset.tutorialConfirmBound = '1';
+            confirm.addEventListener('click', event => {
+                event.stopPropagation();
+                if (typeof Sound !== 'undefined' && Sound.play) Sound.play('click');
+                advance();
+            });
+        }
     }
 
     function cellAt(r, c) {
         if (!grid) return null;
         return grid.querySelector('.cell[data-r="' + r + '"][data-c="' + c + '"]');
+    }
+
+    /* Игрок сам отмечает клетки фигуры; кнопка подтверждения появляется,
+       когда отмечены все. */
+    function toggleSelectCell(cell) {
+        const r = Number(cell.dataset.r);
+        const c = Number(cell.dataset.c);
+        if (!figureCells.some(([fr, fc]) => fr === r && fc === c)) return;
+        cell.classList.toggle('selected');
+        const ready = figureCells.every(([fr, fc]) => {
+            const target = cellAt(fr, fc);
+            return !!target && target.classList.contains('selected');
+        });
+        const confirm = document.getElementById('tutorialConfirm');
+        if (confirm) confirm.hidden = !ready;
     }
 
     /* Фигура всегда появляется в одном и том же месте — обучение стабильно. */
@@ -226,11 +252,11 @@ const Tutorial = (() => {
             });
         },
         select: () => {
-            figureCells.forEach(([r, c], i) => {
-                later(() => {
-                    const cell = cellAt(r, c);
-                    if (cell) cell.classList.add('selected');
-                }, 300 + i * 350);
+            const confirm = document.getElementById('tutorialConfirm');
+            if (confirm) confirm.hidden = true;
+            figureCells.forEach(([r, c]) => {
+                const cell = cellAt(r, c);
+                if (cell) cell.classList.remove('selected');
             });
         },
         capture: () => {
@@ -302,7 +328,13 @@ const Tutorial = (() => {
 
     function onScreenClick(event) {
         if (isFinal()) return;
-        if (event.target.closest('#tutorialPlayBot') || event.target.closest('[data-back]')) return;
+        if (event.target.closest('#tutorialPlayBot') || event.target.closest('[data-back]') ||
+            event.target.closest('#tutorialConfirm')) return;
+        if (story()[index].id === 'select') {
+            const cell = event.target.closest('.cell');
+            if (cell && grid && grid.contains(cell)) toggleSelectCell(cell);
+            return;
+        }
         if (story()[index].id === 'move' && grid && event.target.closest('#tutGrid')) {
             const cell = event.target.closest('.cell');
             if (cell && grid.contains(cell)) {
@@ -319,28 +351,28 @@ const Tutorial = (() => {
         const act = story()[index];
         applyClear(act.clear);
         showText(act);
+        const confirm = document.getElementById('tutorialConfirm');
+        if (confirm) confirm.hidden = act.id !== 'select';
         /* Поле стоит стабильно; новые элементы появляются по таймингу шага. */
         const action = actions[act.id];
         if (action) {
-            if (act.id === 'field' || act.id === 'move') action();
+            if (act.id === 'field' || act.id === 'move' || act.id === 'select' || act.id === 'gallery') action();
             else if (act.delay === 0) later(action, EXIT_MS);
             else later(action, EXIT_MS + (act.delay || 3000));
         }
 
         const hint = document.getElementById('tutorialHint');
-        if (hint) hint.hidden = !!act.final || act.id === 'move';
+        if (hint) hint.hidden = !!act.final || act.id === 'move' || act.id === 'select';
 
         if (act.final) {
-            later(() => {
-                const finalAction = document.getElementById('tutorialFinal');
-                const finalButton = document.getElementById('tutorialPlayBot');
-                if (finalAction) finalAction.hidden = false;
-                if (finalButton) finalButton.hidden = false;
-            }, EXIT_MS + 3000);
+            const finalAction = document.getElementById('tutorialFinal');
+            const finalButton = document.getElementById('tutorialPlayBot');
+            if (finalAction) finalAction.hidden = false;
+            if (finalButton) finalButton.hidden = false;
             return;
         }
-        /* На шаге перестановки продолжение — только клик вне поля, как и сказано в тексте. */
-        if (act.id === 'move') return;
+        /* Перестановка — клик вне поля, выделение — кнопка подтверждения. */
+        if (act.id === 'move' || act.id === 'select') return;
         if (autoTimer !== null) clearTimeout(autoTimer);
         autoTimer = setTimeout(advance, act.hold || 15000);
     }

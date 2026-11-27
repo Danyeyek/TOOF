@@ -57,7 +57,7 @@ const RULES_STORY = [
         id: 'select',
         title: '🖱 Выделение фигуры',
         caption: 'Выделять фигуру не обязательно.',
-        html: '<p>Хочешь зафиксировать фигуру — выдели каждую её клетку по очереди и подтверди. Можно просто подтвердить ход, ничего не выделяя.</p>',
+        html: '<p>Нажми на каждую клетку фигуры, чтобы выделить её. Когда все будут выделены, появится кнопка подтверждения. Ничего выделять не обязательно.</p>',
         hold: 15000
     },
     {
@@ -83,6 +83,7 @@ const RULES_STORY = [
         caption: 'Вот что можно собрать. Ориентированы фигуры могут быть как угодно.',
         html: '<p>Базовые и диагональные фигуры. Смешанная состоит из трёх твоих и трёх чужих клеток.</p>',
         clear: ['board'],
+        delay: 0,
         hold: 15000
     },
     {
@@ -106,13 +107,13 @@ const RULES_STORY_EN = [
     { id: 'figure', title: '🧩 Building a figure', caption: 'Cells combine into a figure.',
       html: '<p>When the right cells sit together, they form a figure. Fix it to claim a sector. All figure types are shown at the end.</p>', clear: ['pending'], hold: 15000 },
     { id: 'select', title: '🖱 Selecting', caption: 'Selection is optional.',
-      html: '<p>To fix a figure, select each of its cells and confirm. You can also just confirm the turn without selecting anything.</p>', hold: 15000 },
+      html: '<p>Tap each figure cell to select it. When all are selected, a confirm button appears. Selecting is optional.</p>', hold: 15000 },
     { id: 'capture', title: '🏆 Capturing sectors', caption: 'Fix a figure — the sector is yours.',
       html: '<p>The figure is locked; its cells leave play. Orange and purple figures can capture the same sector — that is fine.</p>', delay: 0, clear: ['selected'], hold: 15000 },
     { id: 'span', title: '🧭 Several sectors at once?', caption: 'One figure — two or three sectors.',
       html: '<p>One figure can capture two or three sectors at once, depending on where you place it. Watch the highlight change.</p>', clear: ['all'], hold: 15000 },
     { id: 'gallery', title: '🧩 All figures', caption: 'Here is what you can build. Figures may be rotated any way.',
-      html: '<p>Basic and diagonal figures. A mixed one uses three of your cells and three of your opponent’s.</p>', clear: ['board'], hold: 15000 },
+      html: '<p>Basic and diagonal figures. A mixed one uses three of your cells and three of your opponent’s.</p>', clear: ['board'], delay: 0, hold: 15000 },
     { id: 'final', title: '🎮 Ready to play?', caption: 'Three sectors — and you win.',
       html: '<p>The button below starts a game against the bot on easy mode.</p>', final: true }
 ];

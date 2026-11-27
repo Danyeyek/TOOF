@@ -39,15 +39,48 @@ function closeDifficultyConfirm() {
 }
 
 function renderDifficulty() {
-    const select = $('difficultySelect');
-    select.innerHTML = '';
+    const list = $('difficultyList');
+    if (!list) return;
+    list.innerHTML = '';
     Bot.LEVELS.forEach(level => {
-        const option = document.createElement('option');
-        option.value = String(level.id);
-        option.textContent = t(level.name);
-        select.appendChild(option);
+        const active = level.id === Bot.level;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'difficulty-option' + (active ? ' is-active' : '');
+        button.dataset.level = String(level.id);
+        button.setAttribute('role', 'option');
+        button.setAttribute('aria-selected', String(active));
+        button.textContent = t(level.name);
+        list.appendChild(button);
     });
-    select.value = String(Bot.level);
+}
+
+function chooseDifficulty(requested) {
+    const previous = Bot.level;
+    Sound.play('click');
+
+    const popover = $('settingsPopover');
+    if (popover) popover.hidden = true;
+    const button = $('settingsButton');
+    if (button) button.setAttribute('aria-expanded', 'false');
+
+    if (requested === previous) return;
+
+    /* До первого хода можно просто сменить уровень на месте. */
+    if (UI.canChangeDifficulty()) {
+        Bot.setLevel(requested);
+        renderDifficulty();
+        UI.render();
+        return;
+    }
+
+    /* В середине партии или после её конца — предлагаем новую игру. */
+    pendingLevel = requested;
+    const level = Bot.LEVELS.find(l => l.id === requested);
+    $('difficultyConfirmText').textContent = t('Новая сложность — {level}. Начать игру заново?', {
+        level: level ? t(level.name) : ''
+    });
+    $('difficultyConfirm').hidden = false;
 }
 
 function updateSoundButtons() {
@@ -532,34 +565,10 @@ document.addEventListener('DOMContentLoaded', () => {
     updateSoundButtons();
     renderDifficulty();
 
-    $('difficultySelect').addEventListener('change', () => {
-        const requested = Number($('difficultySelect').value);
-        const previous = Bot.level;
-        Sound.play('click');
-
-        const popover = $('settingsPopover');
-        if (popover) popover.hidden = true;
-        const button = $('settingsButton');
-        if (button) button.setAttribute('aria-expanded', 'false');
-
-        if (requested === previous) return;
-
-        /* До первого хода можно просто сменить уровень на месте. */
-        if (UI.canChangeDifficulty()) {
-            Bot.setLevel(requested);
-            renderDifficulty();
-            UI.render();
-            return;
-        }
-
-        /* В середине партии или после её конца — предлагаем новую игру. */
-        pendingLevel = requested;
-        $('difficultySelect').value = String(previous);
-        const level = Bot.LEVELS.find(l => l.id === requested);
-        $('difficultyConfirmText').textContent = t('Новая сложность — {level}. Начать игру заново?', {
-            level: level ? t(level.name) : ''
-        });
-        $('difficultyConfirm').hidden = false;
+    $('difficultyList').addEventListener('click', event => {
+        const option = event.target.closest('.difficulty-option');
+        if (!option) return;
+        chooseDifficulty(Number(option.dataset.level));
     });
 
     $('difficultyConfirmYes').addEventListener('click', () => {
