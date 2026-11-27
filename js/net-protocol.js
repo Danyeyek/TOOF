@@ -109,7 +109,10 @@ const NetProtocol = (() => {
             owners: [...(snapshot.owners || [])].slice().sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
             current: snapshot.current,
             over: !!snapshot.over,
-            winner: snapshot.winner || null
+            winner: snapshot.winner || null,
+            figures: (snapshot.figures || [])
+                .map(f => ({ owner: f.owner, cells: [...(f.cells || [])].sort() }))
+                .sort((a, b) => (a.owner + ':' + a.cells.join('|')).localeCompare(b.owner + ':' + b.cells.join('|')))
         });
     }
 

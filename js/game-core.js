@@ -15,6 +15,36 @@ const parseKey = k => {
     return [Number(k.slice(0, i)), Number(k.slice(i + 1))];
 };
 
+/* Восстановление групп клеток для старых снимков без списка figures. */
+function groupsFromOwners(locked, owners) {
+    const lockedSet = new Set(locked);
+    const ownerMap = new Map(owners);
+    const seen = new Set();
+    const groups = [];
+    for (const start of lockedSet) {
+        if (seen.has(start)) continue;
+        const owner = ownerMap.get(start);
+        const stack = [start];
+        const cells = [];
+        seen.add(start);
+        while (stack.length) {
+            const k = stack.pop();
+            const [r, c] = parseKey(k);
+            cells.push(k);
+            for (const [dr, dc] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const nr = r + dr, nc = c + dc;
+                if (nr < 0 || nr >= BOARD_SIZE || nc < 0 || nc >= BOARD_SIZE) continue;
+                const nk = key(nr, nc);
+                if (!lockedSet.has(nk) || ownerMap.get(nk) !== owner || seen.has(nk)) continue;
+                seen.add(nk);
+                stack.push(nk);
+            }
+        }
+        if (cells.length) groups.push({ owner, cells });
+    }
+    return groups;
+}
+
 /* ---------- Геометрия фигур ---------- */
 
 const SHAPES = {
@@ -168,6 +198,7 @@ function makeGame() {
     winner: null,
     selected: [],
     pending: null,
+    figures: [],
 
     reset() {
         this.board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(EMPTY));
@@ -178,6 +209,7 @@ function makeGame() {
         this.winner = null;
         this.selected = [];
         this.pending = null;
+        this.figures = [];
     },
 
     /* Снимок только «долговечного» состояния: без pending/selected. */
@@ -188,7 +220,8 @@ function makeGame() {
             owners: [...this.owners],
             current: this.current,
             over: this.over,
-            winner: this.winner
+            winner: this.winner,
+            figures: this.figures.map(f => ({ owner: f.owner, cells: f.cells.slice() }))
         };
     },
 
@@ -200,6 +233,9 @@ function makeGame() {
         this.current = snapshot.current === SIDE_O ? SIDE_O : SIDE_X;
         this.over = !!snapshot.over;
         this.winner = snapshot.winner || null;
+        this.figures = Array.isArray(snapshot.figures)
+            ? snapshot.figures.map(f => ({ owner: f.owner, cells: (f.cells || []).slice() }))
+            : groupsFromOwners(snapshot.locked || [], snapshot.owners || []);
         this.selected = [];
         this.pending = null;
         return true;
@@ -309,10 +345,12 @@ function makeGame() {
         const declarer = figureOwner(this.selected, this.board, this.locked);
         if (!declarer) return { ok: false, reason: 'not-a-figure' };
 
-        for (const k of this.selected) {
+        const cells = this.selected.slice();
+        for (const k of cells) {
             this.locked.add(k);
             this.owners.set(k, declarer);
         }
+        this.figures.push({ owner: declarer, cells });
         this.pending = null;
         this.selected = [];
 

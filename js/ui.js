@@ -14,7 +14,6 @@ const UI = (() => {
         mode: 'local',
         human: 'X',
         botTimer: null,
-        awaitingPass: false,
         message: '',
         messageKind: '',
         mySide: 'X',
@@ -85,8 +84,22 @@ const UI = (() => {
         return what + t(', строка ') + (r + 1) + t(', столбец ') + (c + 1) + extra;
     }
 
+    /* Карта «клетка → фигура» позволяет обвести только внешние стороны
+       клеток — контур идёт по форме фигуры, а не по квадрату вокруг неё. */
+    function figureCellMap() {
+        const map = new Map();
+        const figures = Game.figures && Game.figures.length
+            ? Game.figures
+            : groupsFromOwners([...Game.locked], [...Game.owners]);
+        figures.forEach((figure, index) => {
+            figure.cells.forEach(k => map.set(k, index));
+        });
+        return map;
+    }
+
     function renderBoard() {
         const selecting = Game.selected.length > 0;
+        const figMap = figureCellMap();
         let html = '';
         for (let r = 0; r < BOARD_SIZE; r++) {
             for (let c = 0; c < BOARD_SIZE; c++) {
@@ -95,6 +108,15 @@ const UI = (() => {
                 if (value === 'X') cls += ' x';
                 else if (value === 'O') cls += ' o';
                 if (Game.isLocked(r, c)) cls += ' locked';
+
+                const figure = figMap.get(key(r, c));
+                if (figure !== undefined) {
+                    cls += ' figure-cell';
+                    if (figMap.get(key(r - 1, c)) !== figure) cls += ' edge-top';
+                    if (figMap.get(key(r + 1, c)) !== figure) cls += ' edge-bottom';
+                    if (figMap.get(key(r, c - 1)) !== figure) cls += ' edge-left';
+                    if (figMap.get(key(r, c + 1)) !== figure) cls += ' edge-right';
+                }
 
                 // Подсветка одна: выбранные клетки важнее «только что поставленной».
                 if (Game.isSelected(r, c)) {
@@ -166,8 +188,6 @@ const UI = (() => {
     function finish(winner) {
         Game.over = true;
         Game.winner = winner;
-        state.awaitingPass = false;
-        $('passOverlay').hidden = true;
 
         let text;
         let kind;
@@ -260,7 +280,7 @@ const UI = (() => {
     }
 
     function canActNow() {
-        if (Game.over || state.awaitingPass) return false;
+        if (Game.over) return false;
         if (state.mode === 'online') {
             return state.onlineStatus === 'active' &&
                 !state.awaitingEcho &&
@@ -273,24 +293,6 @@ const UI = (() => {
     function canChangeDifficulty() {
         return state.mode === 'bot' && (Game.over ||
             !Game.board.some(row => row.some(value => value !== EMPTY)));
-    }
-
-    /* На одном экране ход физически передаётся следующему игроку только после его согласия. */
-    function beginPass() {
-        if (state.mode !== 'local' || Game.over) return;
-        state.awaitingPass = true;
-        const next = nameOf(Game.current);
-        $('passTitle').textContent = t('Ход: ') + next;
-        $('passText').textContent = t('Передайте устройство игроку ') + next +
-            t(', затем нажмите «Продолжить».');
-        $('passOverlay').hidden = false;
-        render();
-    }
-
-    function finishPass() {
-        state.awaitingPass = false;
-        $('passOverlay').hidden = true;
-        render();
     }
 
     function cellClick(r, c) {
@@ -394,7 +396,6 @@ const UI = (() => {
 
         setMessage(t('Фигура зафиксирована. Ход переходит к ') + nameOf(Game.current) + '.');
         render();
-        beginPass();
         scheduleBot();
     }
 
@@ -413,7 +414,6 @@ const UI = (() => {
         }
         setMessage(t('Ход передан. Ходит ') + nameOf(Game.current) + '.');
         render();
-        beginPass();
         scheduleBot();
     }
 
@@ -424,7 +424,6 @@ const UI = (() => {
         }
         state.mode = mode;
         state.human = 'X';
-        state.awaitingPass = false;
         state.awaitingEcho = false;
         state.onlineStatus = 'active';
         state.finished = false;
@@ -435,7 +434,6 @@ const UI = (() => {
         clearTimeout(state.botTimer);
         Game.reset();
         setMessage(mode === 'bot' ? 'Вы ходите первым (оранжевым).' : 'Первым ходит оранжевый — Игрок 1.');
-        $('passOverlay').hidden = true;
         $('difficultyConfirm').hidden = true;
         showScreen('gameScreen');
         render();
@@ -447,7 +445,6 @@ const UI = (() => {
         state.session = session;
         state.mySide = session.mySide || 'X';
         state.opponentName = session.opponentName || t('Соперник');
-        state.awaitingPass = false;
         state.awaitingEcho = false;
         state.onlineStatus = session.status || 'connecting';
         state.finished = false;
@@ -455,7 +452,6 @@ const UI = (() => {
         state.resumable = false;
         clearTimeout(state.botTimer);
         Game.restore(session.snapshot);
-        $('passOverlay').hidden = true;
         $('difficultyConfirm').hidden = true;
         showScreen('gameScreen');
         setMessage(state.onlineStatus === 'invited'
@@ -552,10 +548,6 @@ const UI = (() => {
         });
         $('fixFigureBtn').addEventListener('click', onFix);
         $('confirmMoveBtn').addEventListener('click', onConfirm);
-        $('passButton').addEventListener('click', () => {
-            Sound.play('click');
-            finishPass();
-        });
         $('resetButton').addEventListener('click', () => {
             Sound.play('click');
             start(state.mode);

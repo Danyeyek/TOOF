@@ -94,7 +94,8 @@ const Tutorial = (() => {
             '<div class="tutorial-text" id="tutText"></div>' +
             '</div>' +
             '<div class="tutorial-board" id="tutBoard"><div class="grid tutorial-grid" id="tutGrid">' +
-            cellsHtml() + sectorHtml() + '</div></div>' +
+            cellsHtml() + sectorHtml() +
+            '</div></div>' +
             '<div class="tutorial-gallery" id="tutGallery" hidden>' +
             '<p class="tutorial-gallery__label">' + t('Обычные фигуры') + '</p>' +
             '<div class="tutorial-gallery__row">' + BASE_FIGURES.map(figureCard).join('') + '</div>' +
@@ -356,7 +357,8 @@ const Tutorial = (() => {
         /* Поле стоит стабильно; новые элементы появляются по таймингу шага. */
         const action = actions[act.id];
         if (action) {
-            if (act.id === 'field' || act.id === 'move' || act.id === 'select' || act.id === 'gallery') action();
+            if (act.id === 'field' || act.id === 'move' || act.id === 'select' ||
+                act.id === 'gallery' || act.id === 'capture') action();
             else if (act.delay === 0) later(action, EXIT_MS);
             else later(action, EXIT_MS + (act.delay || 3000));
         }
