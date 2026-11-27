@@ -104,7 +104,7 @@ const Tutorial = (() => {
             '<p class="tutorial-gallery__label">' + t('Диагональные фигуры') + '</p>' +
             '<div class="tutorial-gallery__row">' + DIAGONAL_FIGURES.map(figureCard).join('') + '</div>' +
             '</div>' +
-            '<p class="tutorial-hint" id="tutorialHint">' + t('Либо через 15 секунд объяснение продолжится автоматически') + '</p>' +
+            '<p class="tutorial-hint" id="tutorialHint">' + t('Нажмите на экран, чтобы перейти к следующему этапу. Либо через 15 секунд объяснение продолжится автоматически') + '</p>' +
             '<button class="btn btn-primary btn-mini tutorial-confirm" id="tutorialConfirm" type="button" hidden>' +
             t('Подтвердить') + '</button>' +
             '</div>';

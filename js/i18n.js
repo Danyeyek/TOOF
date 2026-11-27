@@ -149,7 +149,7 @@ const I18N = (() => {
         'Машина': 'Machine',
         'Стул': 'Chair',
         'Смешанная': 'Mixed',
-        'Либо через 15 секунд объяснение продолжится автоматически': 'Or the explanation will continue automatically after 15 seconds',
+        'Нажмите на экран, чтобы перейти к следующему этапу. Либо через 15 секунд объяснение продолжится автоматически': 'Tap the screen to go to the next step. Or the explanation will continue automatically after 15 seconds',
         'Два сектора — одна фигура.': 'Two sectors — one figure.',
         'Три сектора — та же фигура.': 'Three sectors — same figure.',
 
