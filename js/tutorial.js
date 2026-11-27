@@ -14,6 +14,7 @@ const Tutorial = (() => {
     let gallery = null;
     let index = 0;
     let timers = [];
+    let autoTimer = null;
     let pendingPos = [3, 3];
     let figureCells = [];
 
@@ -22,12 +23,35 @@ const Tutorial = (() => {
     function isFinal() { return index >= story().length - 1; }
 
     function clearTimers() {
-        timers.forEach(timer => clearTimeout(timer));
+        timers.forEach(entry => clearTimeout(entry.id));
         timers = [];
+        if (autoTimer !== null) {
+            clearTimeout(autoTimer);
+            autoTimer = null;
+        }
     }
 
     function later(fn, ms) {
-        timers.push(setTimeout(fn, ms));
+        const entry = { id: null, fn };
+        entry.id = setTimeout(() => {
+            const at = timers.indexOf(entry);
+            if (at !== -1) timers.splice(at, 1);
+            fn();
+        }, ms);
+        timers.push(entry);
+    }
+
+    /* При быстром пропуске доводим все отложенные анимации шага до конца. */
+    function finishAnimations() {
+        let passes = 0;
+        while (timers.length && passes++ < 50) {
+            const batch = timers;
+            timers = [];
+            batch.forEach(entry => {
+                clearTimeout(entry.id);
+                entry.fn();
+            });
+        }
     }
 
     function cellsHtml() {
@@ -90,11 +114,13 @@ const Tutorial = (() => {
     /* Фигура всегда появляется в одном и том же месте — обучение стабильно. */
     const FIGURE_CELLS = [[3, 1], [3, 2], [3, 3], [3, 4]];
 
-    function setSectors(sectors, on) {
+    function setSectors(sectors, on, shared) {
         if (!grid) return;
         grid.querySelectorAll('.tutorial-sector').forEach(overlay => {
             const sector = Number(overlay.dataset.sector);
-            overlay.classList.toggle('is-lit', on && sectors.indexOf(sector) !== -1);
+            const lit = on && sectors.indexOf(sector) !== -1;
+            overlay.classList.toggle('is-lit', lit);
+            overlay.classList.toggle('is-shared', lit && !!shared);
         });
     }
 
@@ -140,7 +166,10 @@ const Tutorial = (() => {
         const caption = document.getElementById('tutCaption');
         const text = document.getElementById('tutText');
         const copy = document.getElementById('tutCopy');
-        if (title) title.textContent = act.title;
+        if (title) {
+            title.textContent = act.title;
+            title.hidden = !act.title;
+        }
         if (caption) caption.textContent = act.caption || '';
         if (text) text.innerHTML = act.html || '';
         if (copy) {
@@ -209,9 +238,9 @@ const Tutorial = (() => {
                     if (otherSectors.indexOf(sector) === -1) otherSectors.push(sector);
                 });
                 const common = sectors.filter(sector => otherSectors.indexOf(sector) !== -1);
-                setSectors(common.length ? common : sectors, true);
+                setSectors(common.length ? common : sectors, true, true);
             } else {
-                setSectors(sectors, true);
+                setSectors(sectors, true, true);
             }
         },
         span: () => {
@@ -229,7 +258,11 @@ const Tutorial = (() => {
     };
 
     function advance() {
-        clearTimers();
+        finishAnimations();
+        if (autoTimer !== null) {
+            clearTimeout(autoTimer);
+            autoTimer = null;
+        }
         if (isFinal()) return;
         index += 1;
         applyAct();
@@ -261,12 +294,12 @@ const Tutorial = (() => {
     function applyAct() {
         const act = story()[index];
         showText(act);
-        /* Только поле появляется сразу. Остальные анимации ждут 3 секунды,
-           чтобы игрок сначала прочитал текст шага. */
+        /* Поле и шаги с delay: 0 — сразу; короткий текст — через 2 сек,
+           остальные — через 3, чтобы игрок успел прочитать. */
         const action = actions[act.id];
         if (action) {
-            if (act.id === 'field') action();
-            else later(action, 3000);
+            if (act.id === 'field' || act.delay === 0) action();
+            else later(action, act.delay || 3000);
         }
 
         const hint = document.getElementById('tutorialHint');
@@ -283,7 +316,8 @@ const Tutorial = (() => {
         }
         /* На шаге перестановки продолжение — только клик вне поля, как и сказано в тексте. */
         if (act.id === 'move') return;
-        later(advance, act.hold || 15000);
+        if (autoTimer !== null) clearTimeout(autoTimer);
+        autoTimer = setTimeout(advance, act.hold || 15000);
     }
 
     function play() {

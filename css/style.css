@@ -438,8 +438,19 @@ body {
 
 /* ---------- Анимированный рассказ о правилах ---------- */
 .tutorial-stage { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; }
-.tutorial-copy { width: 100%; text-align: center; }
+.tutorial-copy {
+    width: 100%;
+    height: 150px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+    overflow: hidden;
+}
 .tutorial-copy.copy-in { animation: tutorial-in 0.5s ease both; }
+@media (max-width: 520px) {
+    .tutorial-copy { height: 180px; }
+}
 @keyframes tutorial-in {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
@@ -460,8 +471,8 @@ body {
     pointer-events: none;
     border: 2px solid rgba(245, 158, 11, .8);
     border-radius: 18px;
-    background: linear-gradient(135deg, rgba(245, 158, 11, .26) 0%, rgba(139, 92, 246, .32) 55%, rgba(124, 58, 237, .36) 100%);
-    box-shadow: 0 0 20px rgba(139, 92, 246, .28), inset 0 0 24px rgba(124, 58, 237, .18);
+    background: rgba(245, 158, 11, .16);
+    box-shadow: 0 0 20px rgba(245, 158, 11, .25), inset 0 0 24px rgba(245, 158, 11, .12);
     opacity: 0;
     transform: scale(.94);
     transition: opacity .45s ease, transform .45s ease;
@@ -471,13 +482,17 @@ body {
     transform: scale(1);
     animation: sector-breathe 2.4s ease-in-out .45s infinite;
 }
+.tutorial-sector.is-shared {
+    background: linear-gradient(135deg, rgba(245, 158, 11, .28) 0%, rgba(139, 92, 246, .16) 60%, rgba(124, 58, 237, .2) 100%);
+    border-color: rgba(167, 139, 250, .75);
+}
 .tutorial-sector[data-sector="0"] { top: 0; left: 0; width: calc(50% - 1.5px); height: calc(50% - 1.5px); }
 .tutorial-sector[data-sector="1"] { top: 0; left: calc(50% + 1.5px); width: calc(50% - 1.5px); height: calc(50% - 1.5px); }
 .tutorial-sector[data-sector="2"] { top: calc(50% + 1.5px); left: 0; width: calc(50% - 1.5px); height: calc(50% - 1.5px); }
 .tutorial-sector[data-sector="3"] { top: calc(50% + 1.5px); left: calc(50% + 1.5px); width: calc(50% - 1.5px); height: calc(50% - 1.5px); }
 @keyframes sector-breathe {
-    0%, 100% { box-shadow: 0 0 20px rgba(139, 92, 246, .28), inset 0 0 24px rgba(124, 58, 237, .18); }
-    50% { box-shadow: 0 0 32px rgba(139, 92, 246, .5), inset 0 0 32px rgba(124, 58, 237, .3); }
+    0%, 100% { box-shadow: 0 0 20px rgba(245, 158, 11, .25), inset 0 0 24px rgba(245, 158, 11, .12); }
+    50% { box-shadow: 0 0 32px rgba(245, 158, 11, .45), inset 0 0 32px rgba(245, 158, 11, .22); }
 }
 .tutorial-grid .cell.pending { animation: pending-pulse 1.4s ease-in-out infinite; }
 .tutorial-grid .cell.figure-in { animation: figure-pop 0.45s ease both; }
