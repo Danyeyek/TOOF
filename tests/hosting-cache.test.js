@@ -17,17 +17,29 @@ function cacheControl(source) {
     return headerRule(source)?.headers?.find(header => header.key === 'Cache-Control')?.value;
 }
 
-test('HTML is revalidated on every load so a new version shows up right after deploy', () => {
+test('HTML is never stored by the browser, so a new version shows up right after deploy', () => {
     for (const source of ['/', 'index.html']) {
-        assert.match(cacheControl(source) || '', /no-cache/, `missing no-cache for ${source}`);
-        assert.match(cacheControl(source) || '', /max-age=0/, `missing max-age=0 for ${source}`);
+        assert.match(cacheControl(source) || '', /no-store/, `missing no-store for ${source}`);
+        assert.match(cacheControl(source) || '', /must-revalidate/, `missing must-revalidate for ${source}`);
     }
 });
 
-test('JS and CSS are revalidated too (asset URLs have no version query string)', () => {
+test('JS and CSS are not stored either', () => {
     const source = '**/*.@(js|css)';
-    assert.match(cacheControl(source) || '', /no-cache/);
-    assert.match(cacheControl(source) || '', /max-age=0/);
+    assert.match(cacheControl(source) || '', /no-store/);
+    assert.match(cacheControl(source) || '', /must-revalidate/);
+});
+
+test('local assets carry the game version in their URL so old copies cannot be reused', () => {
+    const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+    const rules = fs.readFileSync(path.join(ROOT, 'js/rules.js'), 'utf8');
+    const version = rules.match(/const VERSION = '([^']+)'/)[1];
+    const localRefs = [...html.matchAll(/(?:src|href)="((?:js|css)\/[^"]+)"/g)].map(match => match[1]);
+
+    assert.ok(localRefs.length >= 10, 'expected local JS/CSS references in index.html');
+    for (const ref of localRefs) {
+        assert.ok(ref.endsWith(`?v=${version}`), `asset without version stamp: ${ref}`);
+    }
 });
 
 test('security headers remain in place for all files', () => {
