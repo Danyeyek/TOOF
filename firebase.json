@@ -44,6 +44,12 @@
         ]
       },
       {
+        "source": "version.txt",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-store, must-revalidate" }
+        ]
+      },
+      {
         "source": "**/*.@(js|css)",
         "headers": [
           { "key": "Cache-Control", "value": "no-store, must-revalidate" }

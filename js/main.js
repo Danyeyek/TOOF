@@ -58,6 +58,34 @@ function showRankBanner(rank, prefix) {
     rankBannerTimer = setTimeout(() => { banner.hidden = true; }, 2400);
 }
 
+/* Страница может быть открыта часами: сверяем VERSION с version.txt и
+   предлагаем обновиться вручную, не перезагружая партию неожиданно. */
+let updateCheckTimer = null;
+
+async function checkForUpdate() {
+    if (typeof fetch !== 'function') return;
+    try {
+        const response = await fetch('version.txt?ts=' + Date.now(), { cache: 'no-store' });
+        if (!response.ok) return;
+        const latest = (await response.text()).trim();
+        if (!latest || latest === VERSION) return;
+        const banner = $('updateBanner');
+        if (!banner || !banner.hidden) return;
+        $('updateBannerText').textContent = t('Доступна новая версия: ') + latest;
+        banner.hidden = false;
+    } catch (e) {
+        /* file:// или офлайн — проверка версии не нужна */
+    }
+}
+
+function initVersionWatch() {
+    checkForUpdate();
+    clearInterval(updateCheckTimer);
+    updateCheckTimer = setInterval(checkForUpdate, 60000);
+    const button = $('updateReloadBtn');
+    if (button) button.addEventListener('click', () => window.location.reload());
+}
+
 function renderDifficulty() {
     const list = $('difficultyList');
     if (!list) return;
@@ -847,4 +875,5 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     initOnline();
+    initVersionWatch();
 });

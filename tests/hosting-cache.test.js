@@ -42,6 +42,24 @@ test('local assets carry the game version in their URL so old copies cannot be r
     }
 });
 
+test('version marker is served uncached and matches the game version', () => {
+    const marker = fs.readFileSync(path.join(ROOT, 'version.txt'), 'utf8').trim();
+    const rules = fs.readFileSync(path.join(ROOT, 'js/rules.js'), 'utf8');
+    const version = rules.match(/const VERSION = '([^']+)'/)[1];
+    assert.equal(marker, version);
+    assert.match(cacheControl('version.txt') || '', /no-store/);
+});
+
+test('long-open tabs get a new-version banner without an abrupt reload', () => {
+    const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+    const main = fs.readFileSync(path.join(ROOT, 'js/main.js'), 'utf8');
+    assert.match(html, /id="updateBanner"/);
+    assert.match(html, /id="updateReloadBtn"/);
+    assert.match(main, /function checkForUpdate/);
+    assert.match(main, /setInterval\(checkForUpdate, 60000\)/);
+    assert.match(main, /window\.location\.reload\(\)/);
+});
+
 test('security headers remain in place for all files', () => {
     const keys = headerRule('**').headers.map(header => header.key);
     for (const key of ['X-Content-Type-Options', 'X-Frame-Options', 'Referrer-Policy', 'Permissions-Policy']) {
