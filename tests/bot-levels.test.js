@@ -41,7 +41,7 @@ test('профили прежних уровней сохранены под н�
     const { Bot } = loadBot();
     const profiles = Bot.LEVELS.map(level => level.profile);
     assert.deepEqual(profiles[1], {
-        searchDepth: 1, rootMoves: 2, limits: [2, 2, 2], attention: 0.05, winAttention: 1
+        searchDepth: 1, rootMoves: 2, limits: [2, 2, 2], attention: 0.10, winAttention: 1
     });
     assert.deepEqual(profiles[3], {
         searchDepth: 2, rootMoves: 3, limits: [4, 3, 3], attention: 0.20, winAttention: 1
@@ -67,7 +67,7 @@ test('элементарный уже простого, а умеренный м
     assert.ok(elementary.winAttention < easy.winAttention);
 
     assert.deepEqual(moderate, {
-        searchDepth: 1, rootMoves: 3, limits: [3, 2, 2], attention: 0.12, winAttention: 1
+        searchDepth: 1, rootMoves: 3, limits: [3, 2, 2], attention: 0.15, winAttention: 1
     });
     assert.ok(moderate.rootMoves > easy.rootMoves);
     assert.ok(moderate.limits.every((limit, i) => limit >= easy.limits[i]));
@@ -77,18 +77,23 @@ test('элементарный уже простого, а умеренный м
     assert.ok(moderate.attention < medium.attention);
 });
 
-test('дебют задан профилем уровня: 0, 0, 2, 2, 3, 3, 3 хода', () => {
+test('дебют задан профилем уровня: 0, 2, 2, 2, 3, 3, 3 хода', () => {
     const core = loadBot();
     const { Bot } = core;
     const board = emptyBoard(core);
 
     for (const level of core.Bot.LEVELS) {
         Bot.applyLevel(level.id);
-        assert.equal(Bot.openingMoves(), [0, 0, 2, 2, 3, 3, 3][level.id - 1]);
+        assert.equal(Bot.openingMoves(), [0, 2, 2, 2, 3, 3, 3][level.id - 1]);
     }
 
     Bot.applyLevel(2);
+    assert.deepEqual(Bot.profileFor(core.SIDE_O, board), Bot.LEVELS[3].profile);
+    board[0][0] = core.SIDE_O;
+    board[0][1] = core.SIDE_O;
     assert.deepEqual(Bot.profileFor(core.SIDE_O, board), Bot.LEVELS[1].profile);
+    board[0][0] = core.EMPTY;
+    board[0][1] = core.EMPTY;
 
     Bot.applyLevel(3);
     assert.deepEqual(Bot.profileFor(core.SIDE_O, board), Bot.LEVELS[3].profile);
@@ -358,7 +363,7 @@ test('невыносимый мешает построить диагональ�
     assert.equal(bracketMove(core, 7, bracket), hole);
 });
 
-test('дебют: разные первые ходы на всех семи уровнях', () => {
+test('дебют: разные первые ходы на уровнях 2–7, элементарный стабилен', () => {
     const core = loadBot();
     const { Bot, makeGame, key, SIDE_O } = core;
     const game = makeGame();
@@ -369,14 +374,15 @@ test('дебют: разные первые ходы на всех семи ур
         for (const level of Bot.LEVELS) {
             Bot.applyLevel(level.id);
             const seen = new Set();
-            const rolls = [0, 0.21, 0.41, 0.61, 0.81];
+            const rolls = [0, 0.08, 0.17, 0.26, 0.35, 0.44, 0.53, 0.62, 0.71, 0.8, 0.89, 0.98];
             for (const roll of rolls) {
                 Bot.random = () => roll;
                 const move = Bot.decide(game.board, game.locked, SIDE_O, game.owners);
                 assert.ok(move, 'ход должен быть');
                 seen.add(key(move.place[0], move.place[1]));
             }
-            assert.ok(seen.size > 1, `уровень ${level.id}: дебют должен меняться`);
+            if (level.id === 1) assert.equal(seen.size, 1, 'элементарный начинает одинаково');
+            else assert.ok(seen.size > 1, `уровень ${level.id}: дебют должен меняться`);
         }
     } finally {
         Bot.spikes = savedSpikes;

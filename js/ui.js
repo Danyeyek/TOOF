@@ -29,9 +29,12 @@ const UI = (() => {
         opponentName: '',
         opponentUid: '',
         opponentRank: 0,
+        gameMode: 'friend',
         session: null,
         awaitingEcho: false,
         onlineStatus: 'active',
+        onlineClosing: false,
+        surrendering: false,
         finished: false,
         lastPly: 0,
         pendingInvite: null,
@@ -185,17 +188,34 @@ const UI = (() => {
         $('settingsButton').hidden = state.mode !== 'bot';
         if (state.mode !== 'bot') closeSettings();
 
+        const online = state.mode === 'online';
+        const ended = Game.over;
+        const friendGame = online && state.gameMode === 'friend';
+        const randomGame = online && state.gameMode === 'random';
+
         const surrender = $('surrenderButton');
-        if (surrender) surrender.hidden = state.mode !== 'online' || Game.over;
+        if (surrender) {
+            surrender.hidden = !online || ended ||
+                state.onlineStatus === 'surrendered' || state.onlineStatus === 'closed';
+            if (!surrender.hidden) surrender.disabled = false;
+        }
+        /* После сдачи в игре с другом обоим предлагается реванш или выход;
+           в случайной игре — новая игра с новым соперником. */
         const rematch = $('rematchButton');
-        if (rematch) rematch.hidden = !(state.mode === 'online' && Game.over);
+        if (rematch) rematch.hidden = !(friendGame && ended);
+        const newGame = $('onlineNewGameButton');
+        if (newGame) newGame.hidden = !(randomGame && ended);
+        const exit = $('exitGameButton');
+        if (exit) exit.hidden = !(friendGame && ended);
 
         const netStatus = $('netStatus');
         if (netStatus) {
             let text = '';
-            if (state.mode === 'online') {
+            if (online) {
                 if (state.onlineStatus === 'invited') text = t('Ждём, пока друг примет приглашение…');
                 else if (state.onlineStatus === 'abandoned') text = t('Соперник вышел из игры.');
+                else if (state.onlineStatus === 'surrendered') text = t('Партия завершена досрочно.');
+                else if (state.onlineStatus === 'closed') text = t('Комната закрыта.');
                 else if (state.onlineStatus === 'rematch') text = t('Соперник предлагает реванш.');
                 else if (state.awaitingEcho) text = t('Отправляем ход…');
             }
@@ -280,6 +300,33 @@ const UI = (() => {
         render();
     }
 
+    /* Выход из незавершённой партии засчитывается как поражение:
+       ломает серию побед и пополняет серию поражений. */
+    function exitToMenu() {
+        if (!state.finished) {
+            if (state.mode === 'bot') {
+                finish(Game.over ? Game.winner : (state.human === 'X' ? 'O' : 'X'));
+            } else if (state.mode === 'online' && state.session) {
+                if (!Game.over && state.onlineStatus === 'active' &&
+                    !state.surrendering && typeof Lobby !== 'undefined') {
+                    /* В сети приравниваем выход к сдаче: соперник увидит тот же
+                       результат, а цепочка побед в профиле сбросится. */
+                    const session = state.session;
+                    state.surrendering = true;
+                    Lobby.surrender(session).catch(error => {
+                        state.surrendering = false;
+                        onlineError(error);
+                    });
+                    session.destroy();
+                    if (state.session === session) state.session = null;
+                    state.resumable = false;
+                }
+                finish(Game.over ? Game.winner : (state.mySide === 'X' ? 'O' : 'X'));
+            }
+        }
+        showScreen('menuScreen');
+    }
+
     function scheduleBot() {
         if (state.mode !== 'bot' || Game.over || Game.current === state.human) return;
 
@@ -339,12 +386,12 @@ const UI = (() => {
         if (Game.board[r][c] === EMPTY) {
             if (!Game.place(r, c)) {
                 if (Game.pending && Game.isLocked(Game.pending[0], Game.pending[1])) {
-                    setMessage('В этом ходу уже закрашена клетка.');
+                    setMessage('Клетка уже закрашена.');
                 }
                 return;
             }
             Sound.play('place');
-            setMessage('Клетка закрашена. Можно зафиксировать фигуру и завершить ход.');
+            setMessage('Клетка закрашена.');
             render();
             return;
         }
@@ -449,7 +496,7 @@ const UI = (() => {
             else completeTurn();
             return;
         }
-        setMessage('Фигура зафиксирована. Ход не переходит — закрасьте клетку и завершите ход.');
+        setMessage('Фигура зафиксирована. Закрасьте клетку.');
         render();
     }
 
@@ -496,8 +543,11 @@ const UI = (() => {
             : state.human;
         state.awaitingEcho = false;
         state.onlineStatus = 'active';
+        state.onlineClosing = false;
+        state.surrendering = false;
         state.finished = false;
         state.lastPly = 0;
+        state.gameMode = 'friend';
         state.opponentName = '';
         state.opponentUid = '';
         state.opponentRank = 0;
@@ -526,8 +576,11 @@ const UI = (() => {
         state.opponentName = session.opponentName || t('Соперник');
         state.opponentUid = session.opponentUid || '';
         state.opponentRank = session.opponentRank || 0;
+        state.gameMode = session.mode || 'friend';
         state.awaitingEcho = false;
         state.onlineStatus = session.status || 'connecting';
+        state.onlineClosing = false;
+        state.surrendering = false;
         state.finished = false;
         state.lastPly = session.appliedPly || 0;
         state.resumable = false;
@@ -541,6 +594,28 @@ const UI = (() => {
         render();
     }
 
+    /* Победитель при сдаче вычисляется из сторон противников. */
+    function winnerBySurrender(game, by) {
+        if (!by || !game || !game.sides || !game.sides[by]) return null;
+        return game.sides[by] === 'X' ? 'O' : 'X';
+    }
+
+    /* Один игрок вышел — закрываем сессию и у него, и у соперника. */
+    function closeOnlineRoom(message) {
+        if (state.onlineClosing) return;
+        state.onlineClosing = true;
+        const session = state.session;
+        if (session) {
+            session.destroy();
+            if (state.session === session) state.session = null;
+        }
+        state.surrendering = false;
+        state.resumable = false;
+        setMessage(message, 'lose');
+        showScreen('onlineScreen');
+        if (typeof notify === 'function') notify(message);
+    }
+
     function onlineUpdate(session, data) {
         if (state.mode !== 'online' || state.session !== session) return;
 
@@ -551,10 +626,12 @@ const UI = (() => {
         const busy = !!Game.pending || !!Game.selected.length ||
             !!Game.turnFigures.length || state.awaitingEcho;
         if (boardChanged || !busy) Game.restore(data.snapshot);
+        const game = data.game || {};
         state.mySide = data.mySide || state.mySide;
         state.opponentName = data.opponentName || state.opponentName;
         if (data.opponentUid !== undefined) state.opponentUid = data.opponentUid;
         if (data.opponentRank !== undefined) state.opponentRank = data.opponentRank;
+        state.gameMode = data.mode || game.mode || state.gameMode || 'friend';
         state.awaitingEcho = !!data.awaitingEcho;
         state.onlineStatus = data.status || state.onlineStatus;
         state.lastPly = data.appliedPly || 0;
@@ -566,12 +643,38 @@ const UI = (() => {
             }
         }
 
-        if (state.onlineStatus === 'invited') {
-            setMessage('Приглашение отправлено. Ждём друга…');
-        } else if (state.onlineStatus === 'abandoned') {
-            setMessage('Соперник вышел из игры.', 'lose');
-        } else if (state.onlineStatus === 'rematch') {
-            setMessage('Соперник предлагает реванш.');
+        /* Выход одного закрывает комнату у обоих. */
+        if (state.onlineStatus === 'closed') {
+            const by = data.closedBy || game.closedBy;
+            const byMe = typeof Profile !== 'undefined' && !!by && by === Profile.state.uid;
+            closeOnlineRoom(byMe
+                ? 'Вы вышли из комнаты. Соперник тоже вышел.'
+                : 'Соперник вышел из комнаты. Вы тоже вышли.');
+            return;
+        }
+
+        /* Сдача: победа засчитывается обоим клиентам, кнопка сдачи скрывается
+           отрисовкой уже законченной партии. */
+        if (state.onlineStatus === 'surrendered' && !state.finished) {
+            const by = data.surrenderedBy || game.surrenderedBy;
+            const winner = data.surrenderWinner || winnerBySurrender(game, by);
+            if (winner) {
+                finish(winner);
+                setMessage(winner === state.mySide
+                    ? 'Соперник сдался. Вы победили! 🎉'
+                    : t('Вы сдались.') + ' ' + t('Победил ') + nameOf(winner) + '.',
+                winner === state.mySide ? 'win' : 'lose');
+            }
+        }
+
+        if (!state.finished) {
+            if (state.onlineStatus === 'invited') {
+                setMessage('Приглашение отправлено. Ждём друга…');
+            } else if (state.onlineStatus === 'abandoned') {
+                setMessage('Соперник вышел из игры.', 'lose');
+            } else if (state.onlineStatus === 'rematch') {
+                setMessage('Соперник предлагает реванш.');
+            }
         }
 
         render();
@@ -637,7 +740,7 @@ const UI = (() => {
         });
         $('menuButton').addEventListener('click', () => {
             Sound.play('click');
-            showScreen('menuScreen');
+            exitToMenu();
         });
         $('settingsButton').addEventListener('click', event => {
             Sound.play('click');
@@ -660,20 +763,54 @@ const UI = (() => {
         const surrender = $('surrenderButton');
         if (surrender) surrender.addEventListener('click', () => {
             Sound.play('click');
-            if (!state.session || typeof Lobby === 'undefined') return;
+            if (!state.session || typeof Lobby === 'undefined' || state.surrendering) return;
+            state.surrendering = true;
             const session = state.session;
-            Lobby.leave(session).then(() => {
+            const friend = state.gameMode === 'friend';
+            surrender.hidden = true;
+            Lobby.surrender(session).then(() => {
+                /* В игре с другом остаёмся: теперь доступны реванш и выход. */
+                if (friend) return;
+                /* В случайной игре сдающийся сразу выходит, но результат
+                   засчитывается ему так же, как и победителю. */
+                if (!state.finished) finish(state.mySide === 'X' ? 'O' : 'X');
                 session.destroy();
                 if (state.session === session) state.session = null;
+                state.surrendering = false;
                 state.resumable = false;
                 showScreen('menuScreen');
-            }).catch(onlineError);
+            }).catch(error => {
+                state.surrendering = false;
+                onlineError(error);
+            });
         });
 
         const rematch = $('rematchButton');
         if (rematch) rematch.addEventListener('click', () => {
             Sound.play('click');
             if (state.session && typeof Lobby !== 'undefined') Lobby.rematch(state.session).catch(onlineError);
+        });
+
+        const newGame = $('onlineNewGameButton');
+        if (newGame) newGame.addEventListener('click', () => {
+            Sound.play('click');
+            const session = state.session;
+            if (session) session.destroy();
+            state.session = null;
+            state.surrendering = false;
+            state.resumable = false;
+            showScreen('onlineScreen');
+            if (typeof startRandomSearch === 'function') startRandomSearch();
+        });
+
+        const exit = $('exitGameButton');
+        if (exit) exit.addEventListener('click', () => {
+            Sound.play('click');
+            const session = state.session;
+            if (!session || typeof Lobby === 'undefined') return;
+            Lobby.exit(session)
+                .then(() => closeOnlineRoom('Вы вышли из комнаты. Соперник тоже вышел.'))
+                .catch(onlineError);
         });
 
         const inviteAccept = $('inviteAccept');

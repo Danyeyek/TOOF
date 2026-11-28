@@ -643,11 +643,13 @@ const Bot = {
         /* randomFirst — в начале партии монетка решает, кто ходит первым. */
         { id: 1, name: 'Элементарный', openingMoves: 0, openingProfile: 1, randomFirst: true,
           profile: { searchDepth: 1, rootMoves: 1, limits: [1, 1, 1], attention: 0, winAttention: 0.6 } },
-        { id: 2, name: 'Простой', openingMoves: 0, openingProfile: 2, randomFirst: true,
-          profile: { searchDepth: 1, rootMoves: 2, limits: [2, 2, 2], attention: 0.05, winAttention: 1 } },
+        /* Простой: простой профиль, но нормальный дебют профилем Среднего —
+           иначе он сыплется на первых же простых фигурах. */
+        { id: 2, name: 'Простой', openingMoves: 2, openingProfile: 4, randomFirst: true,
+          profile: { searchDepth: 1, rootMoves: 2, limits: [2, 2, 2], attention: 0.10, winAttention: 1 } },
         /* Умеренный: два дебютных хода профилем Среднего — переход без стены. */
         { id: 3, name: 'Умеренный', openingMoves: 2, openingProfile: 4, randomFirst: true,
-          profile: { searchDepth: 1, rootMoves: 3, limits: [3, 2, 2], attention: 0.12, winAttention: 1 } },
+          profile: { searchDepth: 1, rootMoves: 3, limits: [3, 2, 2], attention: 0.15, winAttention: 1 } },
         { id: 4, name: 'Средний', openingMoves: 2, openingProfile: 5, randomFirst: true,
           profile: { searchDepth: 2, rootMoves: 3, limits: [4, 3, 3], attention: 0.20, winAttention: 1 } },
         { id: 5, name: 'Напряжённый', openingMoves: 3, openingProfile: 6, randomFirst: true,
@@ -762,8 +764,8 @@ const Bot = {
        старшего. random подменяется в тестах и бенчмарках. */
     random: Math.random,
     randomOpeningMoves: 3,
-    openingVariants: 5,
-    openingMargin: 100,
+    openingVariants: 3,
+    openingMargin: 20,
     spikes: {
         1: { chance: 0.05, level: 5 },
         2: { chance: 0.10, level: 5 },
@@ -787,7 +789,14 @@ const Bot = {
        уровня или старое сохранение доступ не даёт. Порог 3: Средний и выше
        открываются только серией побед на предыдущих режимах. */
     maxUnlockedLevel() {
-        return Math.max(3, Math.min(this.rankState.rankLevel, this.LEVELS.length));
+        let rankLevel = this.rankState.rankLevel;
+        /* Ранг из аккаунта Google тоже открывает уровни: он приходит с
+           другого устройства и попадает в rankState при входе в аккаунт. */
+        if (typeof Profile !== 'undefined' && Profile && Profile.state &&
+            Profile.state.botRank && Number.isInteger(Profile.state.botRank.rankLevel)) {
+            rankLevel = Math.max(rankLevel, Profile.state.botRank.rankLevel);
+        }
+        return Math.max(3, Math.min(rankLevel, this.LEVELS.length));
     },
 
     isLevelUnlocked(level) {
@@ -799,6 +808,30 @@ const Bot = {
             return 'Мастер ' + romanNumeral(this.rankState.masterWins);
         }
         return RANK_BY_LEVEL[this.rankState.rankLevel] || '';
+    },
+
+    /* Ранг, пришедший из аккаунта Google, объединяем с локальным по
+       максимуму: смена устройства не должна отнимать заслуженный ранг. */
+    applyRemoteRank(data) {
+        if (!data) return false;
+        const level = value => Number.isInteger(value)
+            ? Math.max(0, Math.min(value, this.LEVELS.length)) : null;
+        const rankLevel = level(data.rankLevel);
+        const maxLevel = level(data.maxLevel);
+        const masterWins = Number.isInteger(data.masterWins) && data.masterWins >= 0
+            ? data.masterWins : null;
+        if (rankLevel === null || maxLevel === null || masterWins === null) return false;
+
+        const before = this.rankState;
+        this.rankState = {
+            maxLevel: Math.max(before.maxLevel, maxLevel, rankLevel),
+            rankLevel: Math.max(before.rankLevel, rankLevel),
+            masterWins: Math.max(before.masterWins, masterWins)
+        };
+        const changed = Object.keys(this.rankState).some(key => this.rankState[key] !== before[key]);
+        if (!this.isLevelUnlocked(this.level)) this.applyLevel(this.maxUnlockedLevel());
+        this.save();
+        return changed;
     },
 
     /* Возвращает сторону первого хода. Без humanSide сохраняется старый
@@ -914,6 +947,11 @@ const Bot = {
         if (wonAtSeventh) this.rankState.masterWins++;
         if (changed) this.streak = { wins: 0, losses: 0 };
         this.save();
+        /* Ранг закрепляется за аккаунтом Google: на другом устройстве
+           он восстановится и снова откроет соответствующие уровни. */
+        if (typeof Profile !== 'undefined' && Profile && typeof Profile.saveBotRank === 'function') {
+            Profile.saveBotRank(this.rankState);
+        }
         const rank = this.rankName();
         return {
             changed, level: this.level, name: this.name(), direction: this.direction,

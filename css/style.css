@@ -214,7 +214,9 @@ body {
 .rank-banner {
     position: fixed;
     left: 50%;
-    top: 18%;
+    top: 50%;
+    /* Центр держится и без анимации (prefers-reduced-motion). */
+    transform: translate(-50%, -50%);
     z-index: 70;
     max-width: calc(100% - 32px);
     padding: 14px 26px;
@@ -232,11 +234,11 @@ body {
 }
 
 @keyframes rank-pop {
-    0% { opacity: 0; transform: translate(-50%, -18px) scale(.94); }
-    14% { opacity: 1; transform: translate(-50%, 0) scale(1.04); }
-    22% { transform: translate(-50%, 0) scale(1); }
-    78% { opacity: 1; transform: translate(-50%, 0) scale(1); }
-    100% { opacity: 0; transform: translate(-50%, -12px) scale(.98); }
+    0% { opacity: 0; transform: translate(-50%, calc(-50% - 18px)) scale(.94); }
+    14% { opacity: 1; transform: translate(-50%, -50%) scale(1.04); }
+    22% { transform: translate(-50%, -50%) scale(1); }
+    78% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, calc(-50% - 12px)) scale(.98); }
 }
 
 .update-banner {
@@ -390,10 +392,11 @@ body {
 .message {
     width: 100%;
     height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    /* Одна строка: длинные сообщения не должны обрезаться по высоте. */
+    display: block;
     overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
     padding: 4px 12px;
     border: 1px solid var(--line);
     border-radius: 14px;
@@ -401,7 +404,7 @@ body {
     color: #d4d4d4;
     font-size: .8rem;
     font-weight: 600;
-    line-height: 1.2;
+    line-height: 30px;
     text-align: center;
 }
 
@@ -905,7 +908,7 @@ body {
     .player__sectors { padding: 2px 5px; font-size: .68rem; }
     .game-top { row-gap: 2px; column-gap: 5px; }
     .game-top .btn { padding: 6px 8px; font-size: .7rem; }
-    .game-top .message { height: 36px; padding: 4px 6px; font-size: .7rem; }
+    .game-top .message { height: 36px; line-height: 26px; padding: 4px 6px; font-size: .7rem; }
     .actions .btn { padding: 8px 10px; font-size: .7rem; }
     .demo { grid-template-columns: repeat(var(--w), 10px); grid-template-rows: repeat(var(--h), 10px); }
     .card { min-width: 54px; }

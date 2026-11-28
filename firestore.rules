@@ -73,6 +73,18 @@ service cloud.firestore {
         && (ladder.size() < 8 || validLadderItem(ladder[7]));
     }
 
+    /* Ранг бот-режима из аккаунта: открытые уровни и число побед
+       над 7-м режимом. Старые профили без поля продолжают работать. */
+    function validBotRank(value) {
+        return value is map
+          && (!('rankLevel' in value)
+              || (value.rankLevel is int && value.rankLevel >= 0 && value.rankLevel <= 7))
+          && (!('maxLevel' in value)
+              || (value.maxLevel is int && value.maxLevel >= 0 && value.maxLevel <= 7))
+          && (!('masterWins' in value)
+              || (value.masterWins is int && value.masterWins >= 0));
+    }
+
     function validRanks(ranks, players) {
       return ranks is map
         && ranks.size() == players.size()
@@ -148,6 +160,7 @@ service cloud.firestore {
         && (!('stats' in request.resource.data) || validStats(request.resource.data.stats))
         && (!('rank' in request.resource.data) || validRank(request.resource.data.rank))
         && (!('ladder' in request.resource.data) || validLadder(request.resource.data.ladder))
+        && (!('botRank' in request.resource.data) || validBotRank(request.resource.data.botRank))
         && (!('createdAt' in request.resource.data) || request.resource.data.createdAt == request.time);
       allow update: if signedIn()
         && uid() == userId
@@ -160,6 +173,7 @@ service cloud.firestore {
         && (!('stats' in request.resource.data) || validStats(request.resource.data.stats))
         && (!('rank' in request.resource.data) || validRank(request.resource.data.rank))
         && (!('ladder' in request.resource.data) || validLadder(request.resource.data.ladder))
+        && (!('botRank' in request.resource.data) || validBotRank(request.resource.data.botRank))
         && (!('createdAt' in request.resource.data) || request.resource.data.createdAt == resource.data.createdAt);
 
       match /friends/{friendId} {
@@ -329,6 +343,34 @@ service cloud.firestore {
             && request.resource.data.winner == resource.data.winner
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['status', 'updatedAt', 'expiresAt'])
+          )
+          ||
+          /* Сдача: сдавшийся помечается, победа переходит сопернику.
+              История ходов и очередь не меняются. */
+          (
+            resource.data.status == 'active'
+            && request.resource.data.status == 'surrendered'
+            && request.resource.data.surrenderedBy == uid()
+            && request.resource.data.surrenderedBy in resource.data.players
+            && request.resource.data.ply == resource.data.ply
+            && request.resource.data.current == resource.data.current
+            && request.resource.data.winner == resource.data.winner
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'surrenderedBy', 'updatedAt', 'expiresAt'])
+          )
+          ||
+          /* Выход из комнаты после сдачи или конца партии: второй игрок
+              видит статус closed и тоже выходит. */
+          (
+            resource.data.status in ['active', 'surrendered', 'finished', 'abandoned']
+            && request.resource.data.status == 'closed'
+            && request.resource.data.closedBy == uid()
+            && request.resource.data.closedBy in resource.data.players
+            && request.resource.data.ply == resource.data.ply
+            && request.resource.data.current == resource.data.current
+            && request.resource.data.winner == resource.data.winner
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'closedBy', 'updatedAt', 'expiresAt'])
           )
           ||
           /* Ссылка на реванш — сама партия не меняется. */

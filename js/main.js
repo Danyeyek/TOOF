@@ -598,6 +598,12 @@ async function initOnline() {
     updateAccountHint();
     renderProfile();
 
+    /* Ранг из Google-аккаунта приходит асинхронно: сразу перерисовываем
+       подпись ранга и доступные уровни сложности. */
+    renderRank();
+    renderDifficulty();
+    UI.render();
+
     if (!Net.ready || !Profile.state.uid) return;
 
     Friends.subscribe(renderFriends);

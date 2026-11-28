@@ -206,6 +206,16 @@ const NetTransport = (() => {
         await gameRef(gameId).update(data);
     }
 
+    /* Сдача и выход из комнаты — отдельные сигналы: по ним соперник
+       понимает, кто сдался и кто закрыл партию. */
+    async function surrender(gameId, uid) {
+        await setStatus(gameId, 'surrendered', { surrenderedBy: uid });
+    }
+
+    async function closeGame(gameId, uid) {
+        await setStatus(gameId, 'closed', { closedBy: uid });
+    }
+
     async function acceptInvite(gameId) {
         await setStatus(gameId, 'active', {
             acceptedAt: Net.serverTimestamp(),
@@ -624,6 +634,8 @@ const NetTransport = (() => {
         fetchMoves,
         sendMove,
         setStatus,
+        surrender,
+        closeGame,
         acceptInvite,
         declineInvite,
         requestRematch,

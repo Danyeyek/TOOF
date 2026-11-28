@@ -12,6 +12,9 @@ const Profile = (() => {
     const FRIENDS_KEY = 'toof_local_friends_v1';
     const STATS_KEY = 'toof_local_stats_v1';
     const RANK_KEY = 'toof_online_rank_v1';
+    /* Ранги бот-режима хранятся в том же ключе, что и Bot, и дополнительно
+       уезжают в аккаунт Google: уровни открываются по сохранённому рангу. */
+    const BOT_RANK_KEY = 'toof_rank_v1';
     const MERGED_KEY = 'toof_stats_merged_';
     /* Онлайн-ранг: 0 — без ранга, чем больше число, тем сильнее игрок.
        Повышение — три победы над разными игроками, чей ранг выше нашего. */
@@ -32,6 +35,8 @@ const Profile = (() => {
         online: false,
         stats: { wins: 0, losses: 0, draws: 0 },
         rank: 0,
+        /* Ранг бот-режима из localStorage или из аккаунта Google. */
+        botRank: { maxLevel: 3, rankLevel: 0, masterWins: 0 },
         /* Цепочка побед: [{ uid, rank }] — только соперники выше текущего
            ранга. Один uid учитывается один раз. После повышения остаются
            только те, чей ранг всё ещё выше нового (цепочка на следующий ранг). */
@@ -47,6 +52,7 @@ const Profile = (() => {
     function snapshot() {
         return Object.assign({}, state, {
             stats: Object.assign({}, state.stats),
+            botRank: Object.assign({}, state.botRank),
             ladder: state.ladder.map(item => Object.assign({}, item))
         });
     }
@@ -141,6 +147,69 @@ const Profile = (() => {
         state.ladder = normalizeLadder(remote.ladder);
     }
 
+    /* Ранг бот-режима: rankLevel открывает уровни 4..7, masterWins даёт
+       «Мастера». maxLevel хранит исторический максимум. */
+    function normalizeBotRank(value) {
+        if (!value || typeof value !== 'object') return null;
+        const level = number => Number.isInteger(number) && number >= 0 && number <= 7
+            ? number : null;
+        const rankLevel = level(value.rankLevel);
+        const maxLevel = level(value.maxLevel);
+        const masterWins = Number.isInteger(value.masterWins) && value.masterWins >= 0
+            ? value.masterWins : null;
+        if (rankLevel === null || maxLevel === null || masterWins === null) return null;
+        return { maxLevel: Math.max(maxLevel, rankLevel, 3), rankLevel, masterWins };
+    }
+
+    function mergeBotRank(local, remote) {
+        if (!remote) return local;
+        if (!local) return remote;
+        return {
+            maxLevel: Math.max(local.maxLevel, remote.maxLevel),
+            rankLevel: Math.max(local.rankLevel, remote.rankLevel),
+            masterWins: Math.max(local.masterWins, remote.masterWins)
+        };
+    }
+
+    /* Удалённый ранг не отбирает локальные достижения: берём максимум
+       каждой категории и отдаём результат боту, чтобы unlocked-уровни
+       и подпись ранга совпадали с аккаунтом. */
+    function adoptRemoteBotRank(remote) {
+        const normalized = normalizeBotRank(remote && remote.botRank);
+        if (!normalized) return null;
+        const before = state.botRank;
+        state.botRank = mergeBotRank(before, normalized);
+        writeJson(BOT_RANK_KEY, state.botRank);
+
+        const changed = !before || Object.keys(state.botRank)
+            .some(key => state.botRank[key] !== before[key]);
+        if (typeof Bot !== 'undefined' && Bot && typeof Bot.applyRemoteRank === 'function') {
+            Bot.applyRemoteRank(state.botRank);
+        }
+        if (changed && typeof document !== 'undefined' && document.dispatchEvent &&
+            typeof CustomEvent === 'function') {
+            document.dispatchEvent(new CustomEvent('toof:difficulty'));
+        }
+        return state.botRank;
+    }
+
+    /* Вызывается ботом после органической победы: сохраняем ранг локально
+       и в аккаунте. Анониму достаточно localStorage. */
+    function saveBotRank(data) {
+        const normalized = normalizeBotRank(data);
+        if (!normalized) return null;
+        state.botRank = mergeBotRank(state.botRank, normalized);
+        writeJson(BOT_RANK_KEY, state.botRank);
+        if (Net.ready && state.registered && state.uid) {
+            NetTransport.setUser(state.uid, {
+                botRank: Object.assign({}, state.botRank),
+                updatedAt: Net.serverTimestamp()
+            }, true).catch(() => {});
+        }
+        emit();
+        return state.botRank;
+    }
+
     function randomInt(max) {
         if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
             const buffer = new Uint32Array(1);
@@ -189,6 +258,8 @@ const Profile = (() => {
         state.code = String(saved.code || makeCode()).toUpperCase();
         state.registered = !!saved.registered;
         state.stats = Object.assign({ wins: 0, losses: 0, draws: 0 }, readJson(STATS_KEY, {}));
+        state.botRank = normalizeBotRank(readJson(BOT_RANK_KEY, null)) ||
+            { maxLevel: 3, rankLevel: 0, masterWins: 0 };
         loadLocalRank();
         saveLocal();
     }
@@ -201,6 +272,7 @@ const Profile = (() => {
             registered: state.registered
         });
         writeJson(STATS_KEY, state.stats);
+        writeJson(BOT_RANK_KEY, state.botRank);
         saveLocalRank();
     }
 
@@ -247,6 +319,7 @@ const Profile = (() => {
             state.registered = !!remote.registered;
             mergeStats(remote);
             adoptRemoteRank(remote);
+            adoptRemoteBotRank(remote);
             await ensureCode();
             if (state.code !== remote.code) {
                 await NetTransport.setUser(user.uid, {
@@ -269,6 +342,7 @@ const Profile = (() => {
             stats: Object.assign({}, state.stats),
             rank: state.rank,
             ladder: state.ladder.map(item => Object.assign({}, item)),
+            botRank: Object.assign({}, state.botRank),
             online: true,
             lastSeen: Net.serverTimestamp()
         };
@@ -311,6 +385,7 @@ const Profile = (() => {
             state.registered = !!remote.registered;
             mergeStats(remote);
             adoptRemoteRank(remote);
+            adoptRemoteBotRank(remote);
             saveLocal();
             emit();
         });
@@ -383,6 +458,7 @@ const Profile = (() => {
             stats,
             rank: state.rank,
             ladder: state.ladder.map(item => Object.assign({}, item)),
+            botRank: Object.assign({}, state.botRank),
             updatedAt: Net.serverTimestamp()
         }, true);
 
@@ -430,6 +506,7 @@ const Profile = (() => {
             stats: state.stats,
             rank: state.rank,
             ladder: state.ladder.map(item => Object.assign({}, item)),
+            botRank: Object.assign({}, state.botRank),
             updatedAt: Net.serverTimestamp()
         }, true);
 
@@ -511,6 +588,7 @@ const Profile = (() => {
         upgrade,
         signOut,
         recordResult,
+        saveBotRank,
         isRegistered,
         localFriends,
         addLocalFriend,

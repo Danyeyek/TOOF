@@ -13,7 +13,7 @@ function createOnlineSession(options) {
     const myUid = options.myUid;
 
     let snapshot = options.initialSnapshot || protocol.initialSnapshot();
-    let game = null;
+    let game = options.initialGame || null;
     let moves = [];
     let mySide = options.mySide || null;
     let opponentName = options.opponentName || 'Соперник';
@@ -49,6 +49,13 @@ function createOnlineSession(options) {
         return Number.isInteger(number) && number >= 0 ? number : 0;
     }
 
+    /* Победитель при сдаче — соперник того, кто нажал «Сдаться». */
+    function surrenderWinner() {
+        const by = game && game.surrenderedBy;
+        if (!by || !game.sides || !game.sides[by]) return null;
+        return game.sides[by] === 'X' ? 'O' : 'X';
+    }
+
     function emit() {
         if (destroyed) return;
         onUpdate({
@@ -62,6 +69,10 @@ function createOnlineSession(options) {
             awaitingEcho,
             winner,
             status,
+            mode: game && game.mode || null,
+            surrenderedBy: game && game.surrenderedBy || null,
+            closedBy: game && game.closedBy || null,
+            surrenderWinner: surrenderWinner(),
             rematchGameId,
             appliedPly
         });
@@ -93,6 +104,8 @@ function createOnlineSession(options) {
         if (data.status === 'abandoned') status = 'abandoned';
         else if (data.status === 'finished') status = 'finished';
         else if (data.status === 'invited') status = 'invited';
+        else if (data.status === 'surrendered') status = 'surrendered';
+        else if (data.status === 'closed') status = 'closed';
         else status = 'active';
 
         if (data.rematchGameId) {
@@ -203,6 +216,14 @@ function createOnlineSession(options) {
         await transport.setStatus(gameId, 'abandoned');
     }
 
+    async function surrender() {
+        await transport.surrender(gameId, myUid);
+    }
+
+    async function closeGame() {
+        await transport.closeGame(gameId, myUid);
+    }
+
     function destroy() {
         destroyed = true;
         clearEchoTimer();
@@ -217,6 +238,8 @@ function createOnlineSession(options) {
         resync,
         rematch,
         leave,
+        surrender,
+        closeGame,
         destroy,
         get snapshot() { return snapshot; },
         get game() { return game; },
@@ -227,6 +250,10 @@ function createOnlineSession(options) {
         get awaitingEcho() { return awaitingEcho; },
         get winner() { return winner; },
         get status() { return status; },
+        get mode() { return game && game.mode || null; },
+        get surrenderedBy() { return game && game.surrenderedBy || null; },
+        get closedBy() { return game && game.closedBy || null; },
+        get surrenderWinner() { return surrenderWinner(); },
         get rematchGameId() { return rematchGameId; },
         get appliedPly() { return appliedPly; }
     };

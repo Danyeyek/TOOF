@@ -71,6 +71,7 @@ const Lobby = (() => {
             transport: NetTransport,
             protocol: NetProtocol,
             gameId,
+            initialGame: game,
             myUid: Profile.state.uid,
             mySide,
             opponentName,
@@ -219,6 +220,20 @@ const Lobby = (() => {
         }
     }
 
+    /* Сдача оставляет сессию живой: в игре с другом обоим игрокам
+       предлагается реванш или выход. В случайной игре UI сразу уходит в меню. */
+    async function surrender(session) {
+        if (session) await session.surrender();
+    }
+
+    /* Выход закрывает партию для обоих: второй клиент видит статус closed
+       и тоже выходит из комнаты. */
+    async function exit(session) {
+        if (!session) return;
+        await session.closeGame();
+        session.destroy();
+    }
+
     return {
         start,
         stop,
@@ -235,6 +250,8 @@ const Lobby = (() => {
         findActiveGame,
         rematch,
         leave,
+        surrender,
+        exit,
         get invites() { return invites.slice(); },
         get searching() { return searching; }
     };
