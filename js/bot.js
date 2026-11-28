@@ -757,6 +757,21 @@ const Bot = {
 
     lastBlind: new Set(),
 
+    /* Непредсказуемость: в дебюте бот выбирает случайно среди нескольких
+       почти равных ходов, а на младших уровнях изредка играет профилем
+       старшего. random подменяется в тестах и бенчмарках. */
+    random: Math.random,
+    randomOpeningMoves: 3,
+    openingVariants: 5,
+    openingMargin: 100,
+    spikes: {
+        1: { chance: 0.05, level: 5 },
+        2: { chance: 0.10, level: 5 },
+        3: { chance: 0.15, level: 5 },
+        4: { chance: 0.15, level: 6 }
+    },
+    lastSpike: false,
+
     STORAGE_KEY: 'toof_difficulty_v2',
     LEGACY_KEY: 'toof_difficulty',
     /* Старые номера: 1 Простой, 2 Средний, 3 Опытный, 4 Сложный. */
@@ -929,17 +944,26 @@ const Bot = {
         const other = OTHER_OF[me];
         const mySec = ownedSectors(owners, me);
         const oppSec = ownedSectors(owners, other);
-        const profile = this.profileFor(me, board);
+        let profile = this.profileFor(me, board);
+        const spike = this.spikes && this.spikes[this.level];
+        this.lastSpike = !!(spike && this.random() < spike.chance);
+        if (this.lastSpike) {
+            const target = this.LEVELS.find(l => l.id === spike.level);
+            if (target) profile = target.profile;
+        }
         const levelConfig = this.LEVELS.find(l => l.id === this.level);
         const guardBracket = !!(levelConfig && levelConfig.bracketGuard);
         /* Дебютные ходы играются без тупняка: внимание полное. */
-        const opening = this.paintedBy(me, board) < this.openingMoves();
+        const painted = this.paintedBy(me, board);
+        const opening = painted < this.openingMoves();
+        const randomOpening = painted < this.randomOpeningMoves;
         const attention = opening ? 1 : (profile.attention == null ? 1 : profile.attention);
         const winAttention = profile.winAttention == null ? 1 : profile.winAttention;
         const blind = this.blindCells(board, locked, me, mySec, other, oppSec, attention, winAttention);
         state.blind = blind;
         this.lastBlind = blind;
-        const candidates = generateMoves(state, me, profile.rootMoves);
+        const candidates = generateMoves(state, me,
+            randomOpening ? Math.max(profile.rootMoves, 8) : profile.rootMoves);
         if (!candidates.length) return null;
 
         const own = scan(board, locked, me, blind);
@@ -1075,16 +1099,30 @@ const Bot = {
             return { place: oneBest.spot, fix: oneBest.cells };
         }
 
-        /* 6. Финал — поиск по всем кандидатам. */
+        /* 6. Финал — поиск по всем кандидатам. В дебюте бот может взять любой
+           из нескольких почти равных ходов: партии не начинаются одинаково.
+           Вне дебюта остаётся строгий максимум. */
         let alpha = -Infinity;
         let best = null;
         let bestScore = -Infinity;
+        const ranked = [];
         for (const move of candidates) {
             const value = search(applyMove(state, move, me), me, other,
                 depth, alpha, Infinity, profile.limits);
             const total = value + move.score * 0.001;
+            ranked.push({ move, value, total });
             if (total > bestScore) { bestScore = total; best = move; }
             if (value > alpha) alpha = value;
+        }
+        if (randomOpening && ranked.length > 1) {
+            const bestValue = Math.max.apply(null, ranked.map(x => x.value));
+            const near = ranked.filter(x => x.value >= bestValue - this.openingMargin)
+                .sort((a, b) => b.total - a.total)
+                .slice(0, this.openingVariants);
+            if (near.length > 1) {
+                const pick = near[Math.floor(this.random() * near.length) % near.length];
+                return { place: pick.move.place, fix: pick.move.fix };
+            }
         }
         return best ? { place: best.place, fix: best.fix } : null;
     },

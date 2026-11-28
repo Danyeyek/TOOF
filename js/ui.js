@@ -177,10 +177,10 @@ const UI = (() => {
         }
 
         const canAct = canActNow();
-        /* Выделение фигуры не привязано к закрашиванию; завершить ход можно
-           только после того, как клетка закрашена. */
+        /* Пока идёт выделение, доступна только кнопка фигуры. Подтверждение
+           хода появляется после закрашивания и снятия выделения. */
         $('fixFigureBtn').hidden = !(canAct && Game.selected.length > 0);
-        $('confirmMoveBtn').hidden = !(canAct && !!Game.pending);
+        $('confirmMoveBtn').hidden = !(canAct && !!Game.pending && !Game.selected.length);
         $('resetButton').hidden = !Game.over || state.mode === 'online';
         $('settingsButton').hidden = state.mode !== 'bot';
         if (state.mode !== 'bot') closeSettings();
@@ -442,16 +442,18 @@ const UI = (() => {
             }
             return;
         }
+        /* Клетка уже закрашена: подтверждение фигуры сразу завершает ход,
+           отдельная кнопка подтверждения хода больше не нужна. */
+        if (Game.pending) {
+            if (state.mode === 'online') onlineCommit();
+            else completeTurn();
+            return;
+        }
         setMessage('Фигура зафиксирована. Ход не переходит — закрасьте клетку и завершите ход.');
         render();
     }
 
-    function onConfirm() {
-        if (!canActNow()) return;
-        if (state.mode === 'online') {
-            onlineCommit();
-            return;
-        }
+    function completeTurn() {
         const result = Game.confirm();
         if (!result.ok) return;
         Sound.play('confirm');
@@ -468,6 +470,15 @@ const UI = (() => {
         setMessage(t('Ход передан. Ходит ') + nameOf(Game.current) + '.');
         render();
         scheduleBot();
+    }
+
+    function onConfirm() {
+        if (!canActNow()) return;
+        if (state.mode === 'online') {
+            onlineCommit();
+            return;
+        }
+        completeTurn();
     }
 
     function start(mode, opts) {

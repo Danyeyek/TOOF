@@ -336,6 +336,8 @@ function bracketMove(core, level, cells) {
     for (const cell of cells) game.board[cell[0]][cell[1]] = SIDE_X;
     Bot.rankState.rankLevel =7;
     Bot.setLevel(level);
+    /* Дебютный жребий здесь не нужен: проверяем саму защиту от скобы. */
+    Bot.random = () => 0;
     const move = Bot.decide(game.board, game.locked, SIDE_O, new Map());
     return move ? key(move.place[0], move.place[1]) : null;
 }
@@ -354,4 +356,48 @@ test('невыносимый мешает построить диагональ�
     const hole = core.key(5, 3);
     assert.equal(bracketMove(core, 6, bracket), core.key(3, 3));
     assert.equal(bracketMove(core, 7, bracket), hole);
+});
+
+test('дебют: разные первые ходы на всех семи уровнях', () => {
+    const core = loadBot();
+    const { Bot, makeGame, key, SIDE_O } = core;
+    const game = makeGame();
+    game.reset(SIDE_O);
+    const savedSpikes = Bot.spikes;
+    Bot.spikes = {};
+    try {
+        for (const level of Bot.LEVELS) {
+            Bot.applyLevel(level.id);
+            const seen = new Set();
+            const rolls = [0, 0.21, 0.41, 0.61, 0.81];
+            for (const roll of rolls) {
+                Bot.random = () => roll;
+                const move = Bot.decide(game.board, game.locked, SIDE_O, game.owners);
+                assert.ok(move, 'ход должен быть');
+                seen.add(key(move.place[0], move.place[1]));
+            }
+            assert.ok(seen.size > 1, `уровень ${level.id}: дебют должен меняться`);
+        }
+    } finally {
+        Bot.spikes = savedSpikes;
+    }
+});
+
+test('тир-всплески: шансы заданы для 1..4 и не меняют уровень', () => {
+    const { Bot, makeGame, SIDE_O } = loadBot();
+    const game = makeGame();
+    game.reset(SIDE_O);
+    assert.deepEqual(Object.keys(Bot.spikes).map(Number), [1, 2, 3, 4]);
+    assert.deepEqual(Object.values(Bot.spikes).map(s => s.chance), [0.05, 0.10, 0.15, 0.15]);
+
+    for (const [level, chance] of [[1, 0.05], [2, 0.10], [3, 0.15], [4, 0.15]]) {
+        Bot.applyLevel(level);
+        Bot.random = () => chance / 2;
+        Bot.decide(game.board, game.locked, SIDE_O, game.owners);
+        assert.equal(Bot.lastSpike, true, `уровень ${level}: всплеск должен сработать`);
+        assert.equal(Bot.level, level, 'уровень не меняется');
+        Bot.random = () => 0.99;
+        Bot.decide(game.board, game.locked, SIDE_O, game.owners);
+        assert.equal(Bot.lastSpike, false, `уровень ${level}: всплеск не должен сработать`);
+    }
 });
