@@ -7,6 +7,33 @@
    ============================================================ */
 
 const NetTransport = (() => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const INVITE_TTL = 7 * DAY;      // приглашения и комнаты
+    const REQUEST_TTL = 30 * DAY;    // заявки в друзья
+    const GAME_TTL = 90 * DAY;       // партия после последней активности
+
+    function expiry(ms) {
+        return firebase.firestore.Timestamp.fromMillis(Date.now() + ms);
+    }
+
+    /* Проверка формы хода до транзакции: дублирует правила Firestore и
+       не даёт злоумышленнику потратить запись на битый ход. */
+    function validMovePayload(move) {
+        if (!move || typeof move !== 'object') return false;
+        const cell = value => Array.isArray(value) && value.length === 2 &&
+            Number.isInteger(value[0]) && Number.isInteger(value[1]) &&
+            value[0] >= 0 && value[0] < 10 &&
+            value[1] >= 0 && value[1] < 10;
+        if (move.place != null && !cell(move.place)) return false;
+        if (move.fix == null) return move.place != null;
+        if (!Array.isArray(move.fix) || move.fix.length < 1 || move.fix.length > 6) return false;
+        return move.fix.every(figure =>
+            Array.isArray(figure) && (figure.length === 4 || figure.length === 6) &&
+            figure.every(cell) &&
+            new Set(figure.map(value => value[0] + ',' + value[1])).size === figure.length
+        );
+    }
+
     function db() {
         if (!Net.ready || !Net.db) throw new Error('Firebase не настроен');
         return Net.db;
@@ -52,13 +79,12 @@ const NetTransport = (() => {
             winner: null,
             rematchOf: null,
             rematchGameId: null,
+            /* Приглашение живёт неделю; активная партия — 90 дней после
+               последней активности (поле обновляется каждым ходом). */
+            expiresAt: expiry(invited ? INVITE_TTL : GAME_TTL),
             createdAt: Net.serverTimestamp(),
             updatedAt: Net.serverTimestamp()
         };
-        if (invited) {
-            /* Приглашение живёт неделю: друг может открыть игру позже. */
-            payload.expiresAt = firebase.firestore.Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000);
-        }
         return payload;
     }
 
@@ -104,6 +130,7 @@ const NetTransport = (() => {
     }
 
     async function sendMove({ gameId, side, ply, move, winner }) {
+        if (!validMovePayload(move)) throw new Error('Недопустимый ход');
         const ref = gameRef(gameId);
         const moveRef = ref.collection('moves').doc(String(ply).padStart(4, '0'));
 
@@ -126,7 +153,8 @@ const NetTransport = (() => {
             const update = {
                 current: side === 'X' ? 'O' : 'X',
                 ply: ply + 1,
-                updatedAt: Net.serverTimestamp()
+                updatedAt: Net.serverTimestamp(),
+                expiresAt: expiry(GAME_TTL)
             };
             if (winner) {
                 update.status = 'finished';
@@ -137,15 +165,18 @@ const NetTransport = (() => {
     }
 
     async function setStatus(gameId, status, extra) {
-        const data = Object.assign({ status, updatedAt: Net.serverTimestamp() }, extra || {});
+        const data = Object.assign({
+            status,
+            updatedAt: Net.serverTimestamp(),
+            expiresAt: expiry(GAME_TTL)
+        }, extra || {});
         await gameRef(gameId).update(data);
     }
 
     async function acceptInvite(gameId) {
         await setStatus(gameId, 'active', {
             acceptedAt: Net.serverTimestamp(),
-            invited: null,
-            expiresAt: null
+            invited: null
         });
     }
 
@@ -168,7 +199,8 @@ const NetTransport = (() => {
             }
 
             tx.set(newRef, {
-                mode: game.mode || 'friend',
+                /* Реванш подтверждается ссылкой на прежнюю партию, а не очередью. */
+                mode: 'friend',
                 players: game.players.slice(),
                 sides,
                 names: Object.assign({}, game.names),
@@ -179,6 +211,7 @@ const NetTransport = (() => {
                 winner: null,
                 rematchOf: gameId,
                 rematchGameId: null,
+                expiresAt: expiry(GAME_TTL),
                 createdAt: Net.serverTimestamp(),
                 updatedAt: Net.serverTimestamp()
             });
@@ -205,14 +238,17 @@ const NetTransport = (() => {
         const freshAfter = Date.now() - 60 * 1000;
         const candidates = snap.docs
             .map(doc => Object.assign({ id: doc.id }, doc.data()))
-            /* Не берем «зависшие» записи от закрытых вкладок. */
-            .filter(item => item.uid !== me.uid && millis(item.createdAt) > freshAfter);
+            /* Не берем «зависшие» записи от закрытых вкладок.
+               Соперник берётся из id документа, а не из поля uid: поле мог
+               быть подменено, и тогда игра создалась бы с чужим игроком. */
+            .filter(item => item.id !== me.uid && millis(item.createdAt) > freshAfter);
 
         for (const candidate of candidates) {
+            const otherUid = candidate.id;
             try {
                 return await db().runTransaction(async tx => {
                     const myRef = db().collection('queue').doc(me.uid);
-                    const otherRef = db().collection('queue').doc(candidate.id);
+                    const otherRef = db().collection('queue').doc(otherUid);
                     const mySnap = await tx.get(myRef);
                     const otherSnap = await tx.get(otherRef);
                     if (!mySnap.exists || !otherSnap.exists) throw new Error('queue-gone');
@@ -221,14 +257,14 @@ const NetTransport = (() => {
                     const firstIsX = Math.random() < 0.5;
                     const sides = {};
                     sides[me.uid] = firstIsX ? 'X' : 'O';
-                    sides[candidate.uid] = firstIsX ? 'O' : 'X';
+                    sides[otherUid] = firstIsX ? 'O' : 'X';
                     const names = {};
                     names[me.uid] = me.name;
-                    names[candidate.uid] = candidate.name || 'Соперник';
+                    names[otherUid] = candidate.name || 'Соперник';
 
                     tx.set(gameRefNew, {
                         mode: 'random',
-                        players: [me.uid, candidate.uid],
+                        players: [me.uid, otherUid],
                         sides,
                         names,
                         invited: null,
@@ -238,6 +274,7 @@ const NetTransport = (() => {
                         winner: null,
                         rematchOf: null,
                         rematchGameId: null,
+                        expiresAt: expiry(GAME_TTL),
                         createdAt: Net.serverTimestamp(),
                         updatedAt: Net.serverTimestamp()
                     });
@@ -311,7 +348,8 @@ const NetTransport = (() => {
             fromName: fromName || 'Игрок',
             fromCode: fromCode || '',
             status: 'pending',
-            createdAt: Net.serverTimestamp()
+            createdAt: Net.serverTimestamp(),
+            expiresAt: expiry(REQUEST_TTL)
         });
         return 'pending';
     }
@@ -387,6 +425,22 @@ const NetTransport = (() => {
         await db().collection('users').doc(uid).set(data, { merge: !!merge });
     }
 
+    /* Атомарное резервирование кода: если код уже занят другим uid,
+       вызывающий должен сгенерировать новый и повторить попытку. */
+    async function reserveCode(uid, code) {
+        const normalized = String(code || '').trim().toUpperCase();
+        if (!normalized || normalized.length !== 6) return false;
+        const ref = db().collection('profileCodes').doc(normalized);
+        return db().runTransaction(async tx => {
+            const snap = await tx.get(ref);
+            if (!snap.exists) {
+                tx.set(ref, { code: normalized, uid, createdAt: Net.serverTimestamp() });
+                return true;
+            }
+            return snap.data().uid === uid;
+        });
+    }
+
     async function recordStats(uid, result) {
         const key = result === 'win' ? 'wins' : result === 'loss' ? 'losses' : 'draws';
         const update = {};
@@ -429,7 +483,8 @@ const NetTransport = (() => {
             hostSide: 'X',
             status: 'waiting',
             gameId: null,
-            createdAt: Net.serverTimestamp()
+            createdAt: Net.serverTimestamp(),
+            expiresAt: expiry(INVITE_TTL)
         });
     }
 
@@ -473,6 +528,8 @@ const NetTransport = (() => {
                 winner: null,
                 rematchOf: null,
                 rematchGameId: null,
+                roomCode: code,
+                expiresAt: expiry(GAME_TTL),
                 createdAt: Net.serverTimestamp(),
                 updatedAt: Net.serverTimestamp()
             });
@@ -513,6 +570,7 @@ const NetTransport = (() => {
         subscribeUser,
         getUserByCode,
         setUser,
+        reserveCode,
         recordStats,
         setPresence,
         subscribeFriends,

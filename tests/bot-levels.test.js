@@ -236,6 +236,21 @@ test('первый ход: монетка на всех уровнях, вклю
     assert.equal(second.firstSide(7), 'O');
 });
 
+test('сторона первого хода считается от стороны игрока, а не наоборот', () => {
+    const randomMath = value => {
+        const stub = Object.create(Math);
+        stub.random = () => value;
+        return stub;
+    };
+    const humanFirst = loadBot({ Math: randomMath(0.1) }).Bot;
+    assert.equal(humanFirst.firstSide(7, 'X'), 'X');
+    assert.equal(humanFirst.firstSide(7, 'O'), 'O');
+
+    const botFirst = loadBot({ Math: randomMath(0.9) }).Bot;
+    assert.equal(botFirst.firstSide(7, 'X'), 'O');
+    assert.equal(botFirst.firstSide(7, 'O'), 'X');
+});
+
 function winTimes(bot, count) {
     for (let i = 0; i < count; i++) bot.recordResult(true, false);
 }

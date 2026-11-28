@@ -31,6 +31,18 @@ test('кнопка обучения запускает элементарный 
     const levels = [];
     const events = [];
     const started = [];
+    let saves = 0;
+    const bot = {
+        level: 4,
+        streak: { wins: 2, losses: 0 },
+        setLevel(level) {
+            levels.push(level);
+            this.level = level;
+            this.streak = { wins: 0, losses: 0 };
+            return true;
+        },
+        save() { saves++; }
+    };
     const elements = new Map();
     const fakeElement = () => ({
         hidden: false, innerHTML: '', textContent: '', style: {},
@@ -50,7 +62,7 @@ test('кнопка обучения запускает элементарный 
         CustomEvent: class CustomEvent {
             constructor(type) { this.type = type; }
         },
-        Bot: { setLevel(level) { levels.push(level); return true; } },
+        Bot: bot,
         UI: { start(mode, opts) { started.push([mode, opts]); } }
     });
 
@@ -59,4 +71,30 @@ test('кнопка обучения запускает элементарный 
     assert.deepEqual(levels, [1], 'обучение выбирает элементарный уровень');
     assert.ok(events.includes('toof:difficulty'), 'список режимов обновляется сразу');
     assert.deepEqual(started, [['bot', { fixedFirst: true }]]);
+    assert.deepEqual(bot.streak, { wins: 2, losses: 0 }, 'серия побед сохраняется');
+    assert.ok(saves > 0, 'восстановленная серия записывается обратно');
+});
+
+test('если уже выбран элементарный уровень, смена уровня не вызывается', () => {
+    const levels = [];
+    const bot = {
+        level: 1,
+        streak: { wins: 1, losses: 0 },
+        setLevel(level) { levels.push(level); this.streak = { wins: 0, losses: 0 }; return true; },
+        save() {}
+    };
+    const elements = new Map();
+    const document = {
+        getElementById(id) {
+            if (!elements.has(id)) elements.set(id, { hidden: false });
+            return elements.get(id);
+        },
+        addEventListener() {},
+        dispatchEvent() {}
+    };
+
+    loadTutorial({ document, Bot: bot, UI: { start() {} } }).Tutorial.play();
+
+    assert.deepEqual(levels, []);
+    assert.deepEqual(bot.streak, { wins: 1, losses: 0 });
 });

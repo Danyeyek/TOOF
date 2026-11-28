@@ -36,6 +36,9 @@ const NetProtocol = (() => {
 
         let fix = null;
         const items = figureList(raw.fix);
+        /* За ход нельзя закрыть больше нескольких фигур; ограничение также
+           не даёт завалить реплей длинным списком от злоумышленника. */
+        if (items.length > 6) return null;
         if (items.length) {
             fix = [];
             for (const item of items) {
@@ -99,7 +102,9 @@ const NetProtocol = (() => {
         return JSON.stringify({
             board: snapshot.board,
             locked: [...(snapshot.locked || [])].sort(),
-            owners: [...(snapshot.owners || [])].slice().sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+            owners: [...(snapshot.owners || [])].slice()
+                .sort((a, b) => String(a[0]).localeCompare(String(b[0])) ||
+                                 String(a[1]).localeCompare(String(b[1]))),
             current: snapshot.current,
             over: !!snapshot.over,
             winner: snapshot.winner || null,

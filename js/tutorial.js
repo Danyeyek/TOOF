@@ -393,8 +393,17 @@ const Tutorial = (() => {
         if (finalAction) finalAction.hidden = true;
         if (finalButton) finalButton.hidden = true;
         if (hint) hint.hidden = true;
-        /* Кнопка обещает игру на элементарном режиме — это уровень 1. */
-        if (typeof Bot !== 'undefined' && Bot && typeof Bot.setLevel === 'function') Bot.setLevel(1);
+        /* Кнопка обещает игру на элементарном режиме — это уровень 1.
+           setLevel() сбрасывает серию побед, поэтому сохраняем её и
+           восстанавливаем: обучение не должно стирать прогресс игрока. */
+        if (typeof Bot !== 'undefined' && Bot && typeof Bot.setLevel === 'function' && Bot.level !== 1) {
+            const streak = Bot.streak ? Object.assign({}, Bot.streak) : null;
+            Bot.setLevel(1);
+            if (streak) {
+                Bot.streak = streak;
+                if (typeof Bot.save === 'function') Bot.save();
+            }
+        }
         /* Обновляем подсветку режимов: иначе список в настройках может
            показывать прежний уровень. */
         if (typeof document !== 'undefined' && typeof CustomEvent === 'function') {

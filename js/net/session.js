@@ -135,7 +135,7 @@ function createOnlineSession(options) {
                 move,
                 winner: check.winner || null
             });
-            return { ok: true };
+            return { ok: true, winner: check.winner || null };
         } catch (error) {
             awaitingEcho = false;
             await resync().catch(() => {});

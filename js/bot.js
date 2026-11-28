@@ -786,11 +786,14 @@ const Bot = {
         return RANK_BY_LEVEL[this.rankState.rankLevel] || '';
     },
 
-    /* Возвращает сторону человека: X — человек ходит первым, O — бот. */
-    firstSide(level) {
+    /* Возвращает сторону первого хода. Без humanSide сохраняется старый
+       смысл: X — человек ходит первым, O — бот. С humanSide возвращается
+       реальный символ первого хода: цвет игрока сторону не определяет. */
+    firstSide(level, humanSide) {
         const found = this.LEVELS.find(l => l.id === level) || this.LEVELS[0];
-        if (!found.randomFirst) return 'X';
-        return Math.random() < 0.5 ? 'X' : 'O';
+        const humanFirst = !found.randomFirst || Math.random() < 0.5;
+        if (!humanSide) return humanFirst ? 'X' : 'O';
+        return humanFirst ? humanSide : (humanSide === SIDE_X ? SIDE_O : SIDE_X);
     },
 
     load() {

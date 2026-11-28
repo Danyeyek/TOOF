@@ -20,6 +20,20 @@ test('makeGame создаёт независимые партии', () => {
     assert.equal(b.board[0][0], '');
 });
 
+test('первый ход можно отдать O, не меняя сторону игрока', () => {
+    const core = loadCore();
+    const game = core.makeGame();
+    game.reset('O');
+    assert.equal(game.current, 'O');
+    assert.equal(game.place(0, 0), true);
+    assert.equal(game.board[0][0], 'O');
+    game.confirm();
+    assert.equal(game.current, 'X');
+
+    game.reset();
+    assert.equal(game.current, 'X', 'по умолчанию первым ходит X');
+});
+
 test('snapshot/restore сохраняет доску, locked, owners и очередь', () => {
     const core = loadCore();
     const a = core.makeGame();

@@ -8,6 +8,8 @@
 const $ = id => document.getElementById(id);
 
 let activeGameId = null;
+let activeGame = null;
+let confirmAction = null;
 let currentRoomCode = null;
 let noticeTimer = null;
 let rankBannerTimer = null;
@@ -103,6 +105,15 @@ function chooseDifficulty(requested) {
     UI.start('bot');
 }
 
+/* Старое или вручную подправленное сохранение может содержать закрытый
+   уровень — load() проверяет только диапазон 1..7. Возвращаем доступному. */
+function clampBotLevel() {
+    if (!Bot.isLevelUnlocked(Bot.level)) {
+        Bot.applyLevel(Bot.maxUnlockedLevel());
+        Bot.save();
+    }
+}
+
 function updateSoundButtons() {
     const on = Sound.isOn();
     ['soundToggleMenu', 'soundToggleGame'].forEach(id => {
@@ -128,6 +139,26 @@ function notify(text) {
     box.hidden = false;
     clearTimeout(noticeTimer);
     noticeTimer = setTimeout(() => { box.hidden = true; }, 4000);
+}
+
+/* Явное подтверждение для действий, которые незаметно меняют партию
+   (возврат в игру, вход по ссылке извне). */
+function askConfirm(title, text, onYes, args) {
+    const box = $('confirmOverlay');
+    if (!box || !$('confirmYes') || !$('confirmNo')) {
+        onYes();
+        return;
+    }
+    $('confirmTitle').textContent = t(title);
+    $('confirmText').textContent = t(text, args);
+    confirmAction = onYes;
+    box.hidden = false;
+}
+
+function closeConfirm() {
+    const box = $('confirmOverlay');
+    if (box) box.hidden = true;
+    confirmAction = null;
 }
 
 function copyText(text) {
@@ -507,7 +538,9 @@ function handleDeepLink() {
     const room = params.get('room');
     if (!room) return;
     UI.showScreen('onlineScreen');
-    joinByCode(room);
+    const code = String(room).trim().toUpperCase();
+    askConfirm('Войти в комнату?', 'Код комнаты: {code}. Продолжить?',
+        () => joinByCode(code), { code });
 }
 
 function restartOnlineServices() {
@@ -561,6 +594,7 @@ async function initOnline() {
 
     const active = await Lobby.findActiveGame().catch(() => null);
     if (active) {
+        activeGame = active;
         activeGameId = active.id;
         UI.setResumable(true);
     }
@@ -581,6 +615,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('versionDisplay').textContent = 'v' + VERSION;
 
     Bot.load();
+    clampBotLevel();
     Colors.init();
     UI.init();
     updateSoundButtons();
@@ -773,10 +808,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (!activeGameId) return;
         if (!requireOnline()) return;
-        Lobby.openGame(activeGameId).then(() => {
-            activeGameId = null;
-            UI.setResumable(false);
-        }).catch(error => notify('Не удалось вернуться в игру: ' + (error.message || 'ошибка сети')));
+        const otherUid = (activeGame && activeGame.players || [])
+            .find(uid => uid !== Profile.state.uid);
+        const name = (activeGame && activeGame.names && activeGame.names[otherUid]) || t('Соперник');
+        askConfirm('Вернуться в партию?', 'Продолжить игру с {name}?', () => {
+            Lobby.openGame(activeGameId).then(() => {
+                activeGame = null;
+                activeGameId = null;
+                UI.setResumable(false);
+            }).catch(error => notify('Не удалось вернуться в игру: ' + (error.message || 'ошибка сети')));
+        }, { name });
+    });
+
+    $('confirmYes').addEventListener('click', () => {
+        Sound.play('click');
+        const action = confirmAction;
+        closeConfirm();
+        if (action) action();
+    });
+    $('confirmNo').addEventListener('click', () => {
+        Sound.play('click');
+        closeConfirm();
     });
 
     initOnline();

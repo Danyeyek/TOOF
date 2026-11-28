@@ -16,6 +16,7 @@ const Profile = (() => {
     const ADJECTIVES = ['Быстрый', 'Хитрый', 'Тихий', 'Смелый', 'Умный', 'Ловкий', 'Ясный', 'Дикий'];
     const ANIMALS = ['Лис', 'Кот', 'Волк', 'Сокол', 'Ёж', 'Барс', 'Кит', 'Ворон'];
     const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const CODE_ATTEMPTS = 8;
 
     const state = {
         uid: '',
@@ -30,6 +31,8 @@ const Profile = (() => {
     const listeners = [];
     let heartbeat = null;
     let unsubUser = null;
+    let pageHideHandler = null;
+    let visibilityHandler = null;
 
     function emit() {
         for (const listener of listeners.slice()) {
@@ -75,6 +78,18 @@ const Profile = (() => {
         let code = '';
         for (let i = 0; i < 6; i++) code += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
         return code;
+    }
+
+    /* Код уникален только если удалось зарезервировать его в Firestore.
+       При коллизии генерируем новый — иначе два игрока станут недостижимы
+       по коду (getUserByCode берёт первый попавшийся документ). */
+    async function ensureCode() {
+        if (!Net.ready || !state.uid) return state.code;
+        for (let attempt = 0; attempt < CODE_ATTEMPTS; attempt++) {
+            if (await NetTransport.reserveCode(state.uid, state.code)) return state.code;
+            state.code = makeCode();
+        }
+        throw new Error('Не удалось выбрать уникальный код профиля');
     }
 
     function makeName() {
@@ -152,11 +167,19 @@ const Profile = (() => {
             state.code = String(remote.code || state.code).toUpperCase();
             state.registered = !!remote.registered;
             mergeStats(remote);
+            await ensureCode();
+            if (state.code !== remote.code) {
+                await NetTransport.setUser(user.uid, {
+                    code: state.code,
+                    updatedAt: Net.serverTimestamp()
+                }, true);
+            }
             /* Если на другом устройстве имя поменяли — подтягиваем. */
             saveLocal();
             return remote;
         }
 
+        await ensureCode();
         const data = {
             name: state.name,
             code: state.code,
@@ -182,16 +205,16 @@ const Profile = (() => {
             }
         }, 45000);
 
-        window.addEventListener('pagehide', () => {
-            NetTransport.setPresence(state.uid, false);
-        });
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') {
-                NetTransport.setPresence(state.uid, true);
-            } else {
-                NetTransport.setPresence(state.uid, false);
-            }
-        });
+        /* startPresence вызывается и после выхода из Google: старые слушатели
+           должны сниматься, иначе presence пишется несколько раз с разными uid. */
+        if (pageHideHandler) window.removeEventListener('pagehide', pageHideHandler);
+        if (visibilityHandler) document.removeEventListener('visibilitychange', visibilityHandler);
+        pageHideHandler = () => NetTransport.setPresence(state.uid, false);
+        visibilityHandler = () => {
+            NetTransport.setPresence(state.uid, document.visibilityState === 'visible');
+        };
+        window.addEventListener('pagehide', pageHideHandler);
+        document.addEventListener('visibilitychange', visibilityHandler);
     }
 
     async function init() {
@@ -260,6 +283,7 @@ const Profile = (() => {
 
     async function syncLocalToRemote() {
         if (!Net.ready || !state.uid) return;
+        await ensureCode();
         const stats = Object.assign({}, state.stats);
         await NetTransport.setUser(state.uid, {
             name: state.name,
@@ -296,9 +320,13 @@ const Profile = (() => {
         state.uid = user.uid;
         state.registered = true;
         if (uidChanged) {
-            /* Google-аккаунт уже был привязан к другому uid. Локальные
-               друзья/статистика переносятся в новый профиль. */
+            /* Google-аккаунт уже был привязан к другому uid. Сначала читаем
+               удалённый профиль: иначе локальный name/code/stats затирают
+               данные с другого устройства. Локальные друзья переносятся
+               ниже через syncLocalToRemote. */
             saveLocal();
+            await ensureRemoteUser(user);
+            state.registered = true;
         }
 
         await syncLocalToRemote();
@@ -347,7 +375,8 @@ const Profile = (() => {
     function recordResult(result) {
         if (result === 'win') state.stats.wins++;
         else if (result === 'loss') state.stats.losses++;
-        else state.stats.draws++;
+        else if (result === 'draw') state.stats.draws++;
+        else return Object.assign({}, state.stats);
         saveLocal();
         if (Net.ready && state.registered) {
             NetTransport.recordStats(state.uid, result).catch(() => {});

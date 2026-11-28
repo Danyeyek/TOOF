@@ -12,7 +12,7 @@ rules_version = '2';
    queue/{uid}                         очередь случайного подбора
    rooms/{code}                        комната для игры по ссылке
 
-   Правила не дают менять состав игроков, стороны и имена.
+   Правила не дают менять состав игроков, стороны, имена и историю ходов.
    Ходы проверяются клиентом, но записать ход может только тот,
    чья сейчас очередь, и только со следующим номером ply.
    ============================================================ */
@@ -28,6 +28,58 @@ service cloud.firestore {
       return request.auth.uid;
     }
 
+    function isSide(value) {
+      return value == 'X' || value == 'O';
+    }
+
+    function validName(value) {
+      return value is string && value.size() <= 24;
+    }
+
+    function validStat(value) {
+      return value is int && value >= 0;
+    }
+
+    function validStats(stats) {
+      return stats is map
+        && (!('wins' in stats) || validStat(stats.wins))
+        && (!('losses' in stats) || validStat(stats.losses))
+        && (!('draws' in stats) || validStat(stats.draws));
+    }
+
+    function validCell(cell) {
+      return cell is list
+        && cell.size() == 2
+        && cell[0] is int && cell[1] is int
+        && cell[0] >= 0 && cell[0] < 10
+        && cell[1] >= 0 && cell[1] < 10;
+    }
+
+    /* Фигура — ровно 4 или 6 корректных клеток без дублей. */
+    function validFigure(fig) {
+      return fig is list
+        && (fig.size() == 4 || fig.size() == 6)
+        && validCell(fig[0]) && validCell(fig[1]) && validCell(fig[2]) && validCell(fig[3])
+        && (fig.size() == 4 || (validCell(fig[4]) && validCell(fig[5])));
+    }
+
+    /* Правилам Firestore нельзя перебирать списки и нельзя писать рекурсию,
+       поэтому проверяем все 6 возможных элементов фиксированными индексами. */
+    function validFigures(fix) {
+      return fix is list
+        && fix.size() >= 1 && fix.size() <= 6
+        && validFigure(fix[0])
+        && (fix.size() < 2 || validFigure(fix[1]))
+        && (fix.size() < 3 || validFigure(fix[2]))
+        && (fix.size() < 4 || validFigure(fix[3]))
+        && (fix.size() < 5 || validFigure(fix[4]))
+        && (fix.size() < 6 || validFigure(fix[5]));
+    }
+
+    function codePath(code) {
+      return /databases/$(database)/documents/profileCodes/$(code);
+    }
+
     function isPlayer(data) {
       return signedIn() && uid() in data.players;
     }
@@ -40,15 +92,42 @@ service cloud.firestore {
       return /databases/$(database)/documents/games/$(gameId);
     }
 
+    /* ---------- Резервирование кодов профиля ---------- */
+    match /profileCodes/{code} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.code == code
+        && request.resource.data.uid == uid();
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.uid == uid();
+    }
+
     /* ---------- Профили ---------- */
     match /users/{userId} {
       allow read: if signedIn();
-      allow create: if signedIn() && uid() == userId;
-      allow update: if signedIn() && uid() == userId;
-      allow delete: if false;
+      allow create: if signedIn()
+        && uid() == userId
+        && validName(request.resource.data.name)
+        && request.resource.data.code is string
+        && request.resource.data.code.size() == 6
+        /* Уникальность кода подтверждается зарезервированным документом. */
+        && get(codePath(request.resource.data.code)).data.uid == uid()
+        && (!('stats' in request.resource.data) || validStats(request.resource.data.stats))
+        && (!('createdAt' in request.resource.data) || request.resource.data.createdAt == request.time);
+      allow update: if signedIn()
+        && uid() == userId
+        && (!('name' in request.resource.data) || validName(request.resource.data.name))
+        && (!('code' in request.resource.data)
+            || (request.resource.data.code is string && request.resource.data.code.size() <= 6))
+        && (!('stats' in request.resource.data) || validStats(request.resource.data.stats))
+        && (!('createdAt' in request.resource.data) || request.resource.data.createdAt == resource.data.createdAt);
 
       match /friends/{friendId} {
-        allow read, write: if signedIn() && uid() == userId;
+        allow read: if signedIn() && uid() == userId;
+        allow create, update: if signedIn()
+          && uid() == userId
+          && validName(request.resource.data.name);
+        allow delete: if signedIn() && uid() == userId;
       }
     }
 
@@ -58,13 +137,27 @@ service cloud.firestore {
 
       allow create: if signedIn()
         && request.resource.data.from == uid()
+        && request.resource.data.to is string
         && request.resource.data.to != uid()
-        && request.resource.data.status == 'pending';
+        && request.resource.data.status == 'pending'
+        && validName(request.resource.data.fromName)
+        && request.resource.data.fromCode is string
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.expiresAt is timestamp;
 
+      /* Принять или отклонить заявку может только её получатель.
+         Отправитель не может_self-accept и подменить имя/код. */
       allow update: if isRequestParticipant(resource.data)
+        && uid() == resource.data.to
+        && resource.data.status == 'pending'
         && request.resource.data.from == resource.data.from
         && request.resource.data.to == resource.data.to
-        && request.resource.data.status in ['accepted', 'declined'];
+        && request.resource.data.status in ['accepted', 'declined']
+        && request.resource.data.keys().hasOnly(['from', 'to', 'fromName', 'fromCode',
+                                                 'status', 'createdAt', 'expiresAt',
+                                                 'acceptedAt', 'updatedAt'])
+        && (request.resource.data.status != 'accepted'
+            || request.resource.data.acceptedAt == request.time);
 
       allow delete: if isRequestParticipant(resource.data);
     }
@@ -75,35 +168,132 @@ service cloud.firestore {
 
       allow create: if signedIn()
         && isPlayer(request.resource.data)
+        && request.resource.data.players is list
         && request.resource.data.players.size() == 2
+        && request.resource.data.players[0] != request.resource.data.players[1]
+        && request.resource.data.sides is map
+        && isSide(request.resource.data.sides[request.resource.data.players[0]])
+        && isSide(request.resource.data.sides[request.resource.data.players[1]])
+        && request.resource.data.sides[request.resource.data.players[0]]
+           != request.resource.data.sides[request.resource.data.players[1]]
+        && request.resource.data.names is map
+        && validName(request.resource.data.names[request.resource.data.players[0]])
+        && validName(request.resource.data.names[request.resource.data.players[1]])
         && request.resource.data.status in ['active', 'invited']
+        && request.resource.data.mode in ['random', 'friend']
+        && ((request.resource.data.status == 'invited') == (request.resource.data.invited != null))
+        && (request.resource.data.invited == null
+            || request.resource.data.invited in request.resource.data.players)
         && request.resource.data.ply == 0
-        && request.resource.data.current == 'X';
+        && request.resource.data.current == 'X'
+        && request.resource.data.winner == null
+        && request.resource.data.rematchGameId == null
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        /* Согласие на игру подтверждается уже существующими документами:
+           приглашением, очередью, комнатой или предыдущей партией. */
+        && (
+          /* Приглашение: создаёт тот, кто приглашает. */
+          (
+            request.resource.data.status == 'invited'
+            && uid() == request.resource.data.players[0]
+            && request.resource.data.invited == request.resource.data.players[1]
+          )
+          ||
+          /* Случайный подбор: оба игрока реально стоят в очереди. */
+          (
+            request.resource.data.status == 'active'
+            && request.resource.data.mode == 'random'
+            && get(/databases/$(database)/documents/queue/$(request.resource.data.players[0])).data.uid
+               == request.resource.data.players[0]
+            && get(/databases/$(database)/documents/queue/$(request.resource.data.players[1])).data.uid
+               == request.resource.data.players[1]
+          )
+          ||
+          /* Реванш: те же игроки, инициатор — один из них. */
+          (
+            request.resource.data.status == 'active'
+            && request.resource.data.mode == 'friend'
+            && request.resource.data.rematchOf is string
+            && get(gamePath(request.resource.data.rematchOf)).data.players == request.resource.data.players
+            && uid() in request.resource.data.players
+          )
+          ||
+          /* Комната: хозяин ждёт, гость входит по коду. */
+          (
+            request.resource.data.status == 'active'
+            && request.resource.data.mode == 'friend'
+            && request.resource.data.roomCode is string
+            && get(/databases/$(database)/documents/rooms/$(request.resource.data.roomCode)).data.status == 'waiting'
+            && get(/databases/$(database)/documents/rooms/$(request.resource.data.roomCode)).data.hostUid
+               == request.resource.data.players[0]
+            && uid() == request.resource.data.players[1]
+          )
+        );
 
+      /* Инварианты выполняются для ЛЮБОГО обновления: нельзя подсунуть
+         чужой список игроков, сломать очередь ходов или выдумать победителя. */
       allow update: if isPlayer(resource.data)
         && request.resource.data.players == resource.data.players
         && request.resource.data.sides == resource.data.sides
         && request.resource.data.names == resource.data.names
+        && isSide(request.resource.data.current)
+        && request.resource.data.ply is int
+        && request.resource.data.ply >= resource.data.ply
+        && (!('winner' in request.resource.data)
+            || request.resource.data.winner == null
+            || isSide(request.resource.data.winner))
         && (
-          /* Ход: ply растёт на 1, очередь переходит сопернику. */
+          /* Ход: ply растёт на 1, очередь переходит сопернику.
+             Ходить может только тот, чья сторона сейчас в очереди. */
           (
-            request.resource.data.ply == resource.data.ply + 1
+            resource.data.status == 'active'
+            && resource.data.sides[uid()] == resource.data.current
+            && request.resource.data.ply == resource.data.ply + 1
             && request.resource.data.current != resource.data.current
-            && resource.data.status == 'active'
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['ply', 'current', 'updatedAt', 'status', 'winner', 'expiresAt'])
+            && (
+              request.resource.data.status == 'active'
+              || (request.resource.data.status == 'finished'
+                  && isSide(request.resource.data.winner))
+            )
           )
           ||
           /* Приглашённый принял игру. */
           (
             resource.data.status == 'invited'
+            && uid() == resource.data.invited
             && request.resource.data.status == 'active'
             && request.resource.data.invited == null
+            && request.resource.data.ply == resource.data.ply
+            && request.resource.data.current == resource.data.current
+            && request.resource.data.acceptedAt == request.time
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'invited', 'expiresAt', 'acceptedAt', 'updatedAt'])
           )
           ||
-          /* Отказ, выход или сдача. */
-          request.resource.data.status == 'abandoned'
+          /* Отказ, выход или сдача: игра замораживается без перемотки. */
+          (
+            request.resource.data.status == 'abandoned'
+            && request.resource.data.ply == resource.data.ply
+            && request.resource.data.current == resource.data.current
+            && request.resource.data.winner == resource.data.winner
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'updatedAt', 'expiresAt'])
+          )
           ||
-          /* Ссылка на реванш. */
-          request.resource.data.rematchGameId is string
+          /* Ссылка на реванш — сама партия не меняется. */
+          (
+            request.resource.data.rematchGameId is string
+            && request.resource.data.ply == resource.data.ply
+            && request.resource.data.current == resource.data.current
+            && request.resource.data.status == resource.data.status
+            && request.resource.data.winner == resource.data.winner
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['rematchGameId', 'updatedAt'])
+          )
         );
 
       allow delete: if false;
@@ -116,7 +306,14 @@ service cloud.firestore {
           && get(gamePath(gameId)).data.status == 'active'
           && get(gamePath(gameId)).data.current == request.resource.data.side
           && request.resource.data.side == get(gamePath(gameId)).data.sides[uid()]
-          && request.resource.data.ply == get(gamePath(gameId)).data.ply;
+          && request.resource.data.ply == get(gamePath(gameId)).data.ply
+          && request.resource.data.ply is int
+          && request.resource.data.ply >= 0
+          && request.resource.data.side in ['X', 'O']
+          && (request.resource.data.place == null || validCell(request.resource.data.place))
+          && (request.resource.data.fix == null || validFigures(request.resource.data.fix))
+          && request.resource.data.at == request.time
+          && request.resource.data.keys().hasOnly(['ply', 'side', 'place', 'fix', 'at']);
 
         allow update, delete: if false;
       }
@@ -125,7 +322,15 @@ service cloud.firestore {
     /* ---------- Очередь случайного подбора ---------- */
     match /queue/{userId} {
       allow read: if signedIn();
-      allow create, update: if signedIn() && uid() == userId;
+      /* Поле uid не должно разойтись с id документа: иначе подбор
+         создаст партию с игроком, который в очередь не вставал. */
+      allow create, update: if signedIn()
+        && uid() == userId
+        && request.resource.data.uid == uid()
+        && validName(request.resource.data.name)
+        && request.resource.data.code is string
+        && request.resource.data.code.size() <= 6
+        && request.resource.data.createdAt == request.time;
       /* delete нужен и тому, кто забирает соперника из очереди. */
       allow delete: if signedIn();
     }
@@ -135,15 +340,28 @@ service cloud.firestore {
       allow read: if signedIn();
 
       allow create: if signedIn()
+        && request.resource.data.code == code
         && request.resource.data.hostUid == uid()
-        && request.resource.data.status == 'waiting';
+        && validName(request.resource.data.hostName)
+        && request.resource.data.status == 'waiting'
+        && request.resource.data.gameId == null
+        && (!('joinerUid' in request.resource.data) || request.resource.data.joinerUid == null)
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.createdAt == request.time;
 
       allow update: if signedIn()
         && resource.data.status == 'waiting'
         && request.resource.data.status == 'matched'
-        && request.resource.data.joinerUid == uid();
+        && request.resource.data.joinerUid == uid()
+        && request.resource.data.hostUid == resource.data.hostUid
+        && request.resource.data.hostName == resource.data.hostName
+        && request.resource.data.code == resource.data.code
+        && request.resource.data.gameId is string
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'gameId', 'joinerUid', 'updatedAt']);
 
-      allow delete: if signedIn();
+      allow delete: if signedIn()
+        && (uid() == resource.data.hostUid || uid() == resource.data.joinerUid);
     }
   }
 }

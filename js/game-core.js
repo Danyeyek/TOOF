@@ -227,11 +227,13 @@ function makeGame() {
     figures: [],
     turnFigures: [],
 
-    reset() {
+    /* firstSide — сторона, которая делает первый ход; по умолчанию X.
+       Сторона игрока в бот-режиме задаётся цветом и может не совпадать с ней. */
+    reset(firstSide) {
         this.board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(EMPTY));
         this.locked.clear();
         this.owners.clear();
-        this.current = SIDE_X;
+        this.current = firstSide === SIDE_O ? SIDE_O : SIDE_X;
         this.over = false;
         this.winner = null;
         this.selected = [];

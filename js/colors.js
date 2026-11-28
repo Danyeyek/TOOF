@@ -14,14 +14,25 @@ const Colors = (() => {
 
     function preferredColor() { return preferred; }
 
+    /* Выбранный цвет закрепляет сторону игрока: оранжевый — X, фиолетовый — O.
+       Кто делает первый ход, определяется отдельно и сторону не меняет. */
+    function preferredSide() { return preferred === 'purple' ? 'O' : 'X'; }
+
     /* По умолчанию X оранжевый, O фиолетовый. Палитра меняется местами,
-       только если цвет текущей стороны игрока не совпадает с его выбором. */
+       только если цвет стороны игрока не совпадает с его выбором. */
     function shouldSwap(side) {
         return side === 'X' ? preferred === 'purple' : preferred === 'orange';
     }
 
     function applyFor(side) {
         document.documentElement.classList.toggle('prefer-purple', shouldSwap(side));
+    }
+
+    /* В сетевой партии цвета сторон фиксированы: X оранжевый, O фиолетовый.
+       Настройка цвета влияет только на локальные режимы — игроки видят ходы
+       противника «вторым» цветом и не перекрашивают их под себя. */
+    function applyFixed() {
+        document.documentElement.classList.toggle('prefer-purple', false);
     }
 
     function refreshButton() {
@@ -55,5 +66,6 @@ const Colors = (() => {
         }
     }
 
-    return { preferredColor, shouldSwap, applyFor, refreshButton, toggle, init };
+    return { preferredColor, preferredSide, shouldSwap, applyFor, applyFixed,
+        refreshButton, toggle, init };
 })();

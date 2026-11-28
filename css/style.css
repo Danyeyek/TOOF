@@ -524,6 +524,9 @@ body {
     border-radius: var(--radius);
 }
 
+/* Диалог подтверждения живёт вне экранов, поэтому фиксируется к окну. */
+#confirmOverlay { position: fixed; border-radius: 0; }
+
 .pass-card {
     display: flex;
     flex-direction: column;

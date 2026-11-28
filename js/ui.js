@@ -10,6 +10,15 @@ const UI = (() => {
         bot: { X: 'Вы', O: 'Бот' }
     };
 
+    /* Ключ — сторона игрока и сторона первого хода. Цвет игрока задан
+       настройкой, поэтому цвет первого хода зависит от того, кто он. */
+    const BOT_START_MESSAGE = {
+        'XX': 'Вы ходите первым (оранжевым).',
+        'XO': 'Бот ходит первым (фиолетовым). Вы — оранжевый.',
+        'OO': 'Вы ходите первым (фиолетовым).',
+        'OX': 'Бот ходит первым (оранжевым). Вы — фиолетовый.'
+    };
+
     const state = {
         mode: 'local',
         human: 'X',
@@ -142,9 +151,10 @@ const UI = (() => {
     }
 
     function render() {
-        const colorSide = state.mode === 'local' ? 'X'
-            : state.mode === 'online' ? state.mySide : state.human;
-        Colors.applyFor(colorSide);
+        /* В сети цвета привязаны к сторонам: X оранжевый, O фиолетовый.
+           Своя настройка не перекрашивает ходы соперника. */
+        if (state.mode === 'online') Colors.applyFixed();
+        else Colors.applyFor(state.mode === 'bot' ? state.human : 'X');
         renderBoard();
 
         $('xName').textContent = nameOf('X');
@@ -383,10 +393,20 @@ const UI = (() => {
         state.session.commitMove(move).then(result => {
             if (!result.ok) {
                 state.awaitingEcho = false;
+                /* Ход мог зафиксировать фигуру локально. Если отправка не
+                   прошла, возвращаем проверенное состояние сессии. */
+                if (state.session) Game.restore(state.session.snapshot);
                 if (result.reason !== 'pending') {
                     setMessage('Не удалось отправить ход. Проверьте соединение.');
                 }
                 render();
+                return;
+            }
+            /* Победа засчитывается после успешной записи хода в журнал.
+               Повторный вызов из эха или finish() ничего не изменит. */
+            if (result.winner) {
+                state.awaitingEcho = false;
+                finish(result.winner);
             }
         });
     }
@@ -408,8 +428,13 @@ const UI = (() => {
 
         Sound.play('figure');
         if (result.winner) {
-            if (state.mode === 'online') onlineCommit();
-            finish(result.winner);
+            if (state.mode === 'online') {
+                /* В онлайне победа фиксируется только после того, как ход
+                   принят журналом: иначе статус/статистика разойдутся с партией. */
+                onlineCommit();
+            } else {
+                finish(result.winner);
+            }
             return;
         }
         setMessage('Фигура зафиксирована. Ход не переходит — закрасьте клетку и завершите ход.');
@@ -446,11 +471,13 @@ const UI = (() => {
             state.session = null;
         }
         state.mode = mode;
-        /* В бот-режиме сторону первого хода задаёт уровень (см. Bot.firstSide).
-           Обучение всегда начинает человек. */
-        state.human = mode === 'bot' && !(opts && opts.fixedFirst)
-            ? Bot.firstSide(Bot.level)
-            : 'X';
+        /* Сторона игрока закреплена выбранным цветом. Первый ход задаётся
+           отдельно: в бот-режиме его решает монетка уровня, в обучении
+           начинает человек; в локальном режиме первым всегда ходит X. */
+        state.human = mode === 'bot' ? Colors.preferredSide() : 'X';
+        const firstSide = mode === 'bot'
+            ? (opts && opts.fixedFirst ? state.human : Bot.firstSide(Bot.level, state.human))
+            : state.human;
         state.awaitingEcho = false;
         state.onlineStatus = 'active';
         state.finished = false;
@@ -459,13 +486,13 @@ const UI = (() => {
         state.mySide = 'X';
         state.resumable = false;
         clearTimeout(state.botTimer);
-        Game.reset();
+        Game.reset(firstSide);
         if (mode === 'bot') {
-            setMessage(state.human === 'X'
-                ? 'Вы ходите первым (оранжевым).'
-                : 'Бот ходит первым (оранжевым). Вы — фиолетовый.');
+            setMessage(BOT_START_MESSAGE[state.human + firstSide]);
         } else {
-            setMessage('Первым ходит оранжевый — Игрок 1.');
+            setMessage(Colors.shouldSwap('X')
+                ? 'Первым ходит фиолетовый — Игрок 1.'
+                : 'Первым ходит оранжевый — Игрок 1.');
         }
         $('difficultyConfirm').hidden = true;
         showScreen('gameScreen');

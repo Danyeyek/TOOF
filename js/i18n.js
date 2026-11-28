@@ -60,6 +60,8 @@ const I18N = (() => {
         'Сложный': 'Hard',
         'Невыносимый': 'Unbearable',
         'Бот ходит первым (оранжевым). Вы — фиолетовый.': 'The bot moves first (orange). You are purple.',
+        'Бот ходит первым (фиолетовым). Вы — оранжевый.': 'The bot moves first (purple). You are orange.',
+        'Вы ходите первым (фиолетовым).': 'You move first (purple).',
 
         /* Ранги */
         'Ранг: ': 'Rank: ',
@@ -130,6 +132,7 @@ const I18N = (() => {
         'Ход передан. Ходит ': 'Move confirmed. Now playing: ',
         'Вы ходите первым (оранжевым).': 'You move first (orange).',
         'Первым ходит оранжевый — Игрок 1.': 'Orange moves first — Player 1.',
+        'Первым ходит фиолетовый — Игрок 1.': 'Purple moves first — Player 1.',
         'Приглашение отправлено. Ждём друга…': 'Invitation sent. Waiting for your friend…',
         'Вы играете ': 'You play ',
         'оранжевым': 'orange',
@@ -220,6 +223,11 @@ const I18N = (() => {
         'Введите код комнаты.': 'Enter the room code.',
         'Не удалось войти: ': 'Could not join: ',
         'проверьте код': 'check the code',
+        'Войти в комнату?': 'Join room?',
+        'Код комнаты: {code}. Продолжить?': 'Room code: {code}. Continue?',
+        'Вернуться в партию?': 'Resume game?',
+        'Продолжить игру с {name}?': 'Continue the game with {name}?',
+        'Подтвердить': 'Confirm',
         'Введите код друга.': 'Enter your friend’s code.',
         'Этот игрок уже у вас в друзьях.': 'This player is already your friend.',
         'Заявка отправлена.': 'Request sent.',

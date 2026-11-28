@@ -54,3 +54,19 @@ test('выбор цвета сохраняется', () => {
     const { Colors } = loadColors('purple');
     assert.equal(Colors.preferredColor(), 'purple');
 });
+
+test('цвет закрепляет сторону игрока, в сети палитра фиксирована', () => {
+    const orange = loadColors(null);
+    assert.equal(orange.Colors.preferredSide(), 'X');
+    orange.Colors.applyFor('O');
+    assert.equal(orange.classes.has('prefer-purple'), true);
+    orange.Colors.applyFixed();
+    assert.equal(orange.classes.has('prefer-purple'), false);
+
+    const purple = loadColors('purple');
+    assert.equal(purple.Colors.preferredSide(), 'O');
+    purple.Colors.applyFor('X');
+    assert.equal(purple.classes.has('prefer-purple'), true);
+    purple.Colors.applyFixed();
+    assert.equal(purple.classes.has('prefer-purple'), false);
+});

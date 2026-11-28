@@ -112,6 +112,7 @@ const Friends = (() => {
 
     async function handleOutgoing(request) {
         if (!request || request.status !== 'accepted') return;
+        if (!request.to || request.to === Profile.state.uid) return;
         if (friendById(request.to)) {
             await NetTransport.deleteFriendRequest(request.id).catch(() => {});
             return;

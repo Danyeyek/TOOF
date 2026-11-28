@@ -205,6 +205,17 @@
 
 <div class="notice" id="notice" hidden></div>
 
+<div class="pass-overlay" id="confirmOverlay" hidden>
+    <div class="pass-card">
+        <h2 class="title" id="confirmTitle"></h2>
+        <p class="hint" id="confirmText"></p>
+        <div class="confirm-actions">
+            <button class="btn btn-primary" id="confirmYes" type="button">Подтвердить</button>
+            <button class="btn" id="confirmNo" type="button">Отменить</button>
+        </div>
+    </div>
+</div>
+
 <div class="rank-banner" id="rankBanner" role="status" aria-live="polite" hidden></div>
 
 <div class="toast" id="inviteToast" hidden>
@@ -226,10 +237,10 @@
 <script src="js/bot.js"></script>
 <script src="js/tutorial.js"></script>
 
-<!-- Firebase compat SDK: работает без сборщика. -->
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<!-- Firebase compat SDK: работает без сборщика. SRI привязывает скрипты к закреплённой версии. -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" integrity="sha384-AQ3POAMqIhwS81FrUH95ekxqBZHeP5tG2JfEL3+7GuTtfRLWnrRh32UxwzM+//A9" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js" integrity="sha384-TnlRYaR4JYz/lpaGuaiU61PjNberSA4vjLjtF+oRC/IkohkJqnWxw5EmDSOt1vA1" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js" integrity="sha384-qn4Jh88HhJA8dplNQyGjOh9OGI4izVhrfj/qIFgaKcdgOE06pXqIKGlsCILZcLAC" crossorigin="anonymous"></script>
 
 <script src="js/firebase-config.js"></script>
 <script src="js/net/firebase.js"></script>
