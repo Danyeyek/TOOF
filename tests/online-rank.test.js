@@ -339,9 +339,9 @@ test('правила Firestore проверяют ранг, цепочку и р
     assert.match(rules, /request\.resource\.data\.ranks == resource\.data\.ranks/);
 });
 
-test('версия игры — 0.9.9', () => {
+test('версия игры — 1.0', () => {
     const rules = fs.readFileSync(path.join(ROOT, 'js/rules.js'), 'utf8');
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
-    assert.match(rules, /const VERSION = '0\.9\.9'/);
-    assert.equal(pkg.version, '0.9.9');
+    assert.match(rules, /const VERSION = '1\.0'/);
+    assert.equal(pkg.version, '1.0');
 });
