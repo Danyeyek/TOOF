@@ -90,22 +90,46 @@ const Net = (() => {
         );
     }
 
+    /* Привязка анонимного профиля к Google сохраняет uid, а значит и все
+       текущие партии. Но Google-аккаунт может быть уже привязан к другому
+       Firebase-профилю — типичный случай входа со второго устройства. */
+    function credentialInUse(error) {
+        const code = error && error.code;
+        return code === 'auth/credential-already-in-use' ||
+            code === 'auth/account-exists-with-different-credential' ||
+            code === 'auth/provider-already-linked';
+    }
+
+    function signInWithGooglePopup(provider) {
+        return auth.signInWithPopup(provider).then(result => result.user);
+    }
+
     function signInGoogle() {
         if (!ready) return Promise.reject(new Error('Firebase не настроен'));
         const provider = new firebase.auth.GoogleAuthProvider();
         const user = auth.currentUser;
 
-        if (user && user.isAnonymous) {
-            return user.linkWithPopup(provider).then(result => result.user).catch(error => {
-                /* Google уже привязан к другому Firebase-аккаунту:
-                   входим в него, локальные данные перенесёт Profile. */
-                if (error && error.code === 'auth/credential-already-in-use') {
-                    return auth.signInWithPopup(provider).then(result => result.user);
+        if (!user || !user.isAnonymous) return signInWithGooglePopup(provider);
+
+        return user.linkWithPopup(provider).then(result => result.user).catch(error => {
+            if (!credentialInUse(error)) {
+                /* Firebase normally gives an Error; tests and some SDK
+                   versions may reject with a plain object. */
+                if (error && !(error instanceof Error)) {
+                    throw Object.assign(new Error(error.code || 'auth/unknown'), error);
                 }
                 throw error;
-            });
-        }
-        return auth.signInWithPopup(provider).then(result => result.user);
+            }
+
+            /* Повторный popup после неудачной привязки часто падает с
+               auth/cancelled-popup-request: первый popup ещё не закрылся.
+               Ошибка привязки уже содержит credential — входим напрямую,
+               без второго окна. Профиль и данные объединит Profile.upgrade(). */
+            if (error.credential) {
+                return auth.signInWithCredential(error.credential).then(result => result.user);
+            }
+            return signInWithGooglePopup(provider);
+        });
     }
 
     function signOut() {

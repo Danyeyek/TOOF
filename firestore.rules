@@ -47,6 +47,39 @@ service cloud.firestore {
         && (!('draws' in stats) || validStat(stats.draws));
     }
 
+    /* Онлайн-ранг: 0 — без ранга, чем больше число, тем сильнее игрок. */
+    function validRank(rank) {
+      return rank is int && rank >= 0 && rank <= 1000;
+    }
+
+    /* Цепочка побед над более сильными игроками. Правила не умеют
+       перебирать списки, поэтому проверяем фиксированные индексы. */
+    function validLadderItem(item) {
+      return item is map
+        && item.uid is string && item.uid.size() > 0 && item.uid.size() <= 128
+        && validRank(item.rank);
+    }
+
+    function validLadder(ladder) {
+      return ladder is list
+        && ladder.size() <= 8
+        && (ladder.size() < 1 || validLadderItem(ladder[0]))
+        && (ladder.size() < 2 || validLadderItem(ladder[1]))
+        && (ladder.size() < 3 || validLadderItem(ladder[2]))
+        && (ladder.size() < 4 || validLadderItem(ladder[3]))
+        && (ladder.size() < 5 || validLadderItem(ladder[4]))
+        && (ladder.size() < 6 || validLadderItem(ladder[5]))
+        && (ladder.size() < 7 || validLadderItem(ladder[6]))
+        && (ladder.size() < 8 || validLadderItem(ladder[7]));
+    }
+
+    function validRanks(ranks, players) {
+      return ranks is map
+        && ranks.size() == players.size()
+        && validRank(ranks[players[0]])
+        && validRank(ranks[players[1]]);
+    }
+
     function validCell(cell) {
       return cell is list
         && cell.size() == 2
@@ -113,20 +146,28 @@ service cloud.firestore {
         /* Уникальность кода подтверждается зарезервированным документом. */
         && get(codePath(request.resource.data.code)).data.uid == uid()
         && (!('stats' in request.resource.data) || validStats(request.resource.data.stats))
+        && (!('rank' in request.resource.data) || validRank(request.resource.data.rank))
+        && (!('ladder' in request.resource.data) || validLadder(request.resource.data.ladder))
         && (!('createdAt' in request.resource.data) || request.resource.data.createdAt == request.time);
       allow update: if signedIn()
         && uid() == userId
         && (!('name' in request.resource.data) || validName(request.resource.data.name))
+        /* Код нельзя перехватить у другого игрока: он должен быть либо
+           прежним, либо зарезервированным за этим uid. */
         && (!('code' in request.resource.data)
-            || (request.resource.data.code is string && request.resource.data.code.size() <= 6))
+            || (request.resource.data.code is string && request.resource.data.code.size() == 6
+                && get(codePath(request.resource.data.code)).data.uid == uid()))
         && (!('stats' in request.resource.data) || validStats(request.resource.data.stats))
+        && (!('rank' in request.resource.data) || validRank(request.resource.data.rank))
+        && (!('ladder' in request.resource.data) || validLadder(request.resource.data.ladder))
         && (!('createdAt' in request.resource.data) || request.resource.data.createdAt == resource.data.createdAt);
 
       match /friends/{friendId} {
         allow read: if signedIn() && uid() == userId;
         allow create, update: if signedIn()
           && uid() == userId
-          && validName(request.resource.data.name);
+          && validName(request.resource.data.name)
+          && (!('rank' in request.resource.data) || validRank(request.resource.data.rank));
         allow delete: if signedIn() && uid() == userId;
       }
     }
@@ -179,6 +220,9 @@ service cloud.firestore {
         && request.resource.data.names is map
         && validName(request.resource.data.names[request.resource.data.players[0]])
         && validName(request.resource.data.names[request.resource.data.players[1]])
+        /* Ранги фиксируются в момент создания партии и не меняются. */
+        && (!('ranks' in request.resource.data)
+            || validRanks(request.resource.data.ranks, request.resource.data.players))
         && request.resource.data.status in ['active', 'invited']
         && request.resource.data.mode in ['random', 'friend']
         && ((request.resource.data.status == 'invited') == (request.resource.data.invited != null))
@@ -238,6 +282,7 @@ service cloud.firestore {
         && request.resource.data.players == resource.data.players
         && request.resource.data.sides == resource.data.sides
         && request.resource.data.names == resource.data.names
+        && (!('ranks' in resource.data) || request.resource.data.ranks == resource.data.ranks)
         && isSide(request.resource.data.current)
         && request.resource.data.ply is int
         && request.resource.data.ply >= resource.data.ply
@@ -274,9 +319,11 @@ service cloud.firestore {
                  .hasOnly(['status', 'invited', 'expiresAt', 'acceptedAt', 'updatedAt'])
           )
           ||
-          /* Отказ, выход или сдача: игра замораживается без перемотки. */
+          /* Отказ, выход или сдача: игра замораживается без перемотки.
+             Завершённую партию переоткрывать нельзя. */
           (
-            request.resource.data.status == 'abandoned'
+            resource.data.status != 'finished'
+            && request.resource.data.status == 'abandoned'
             && request.resource.data.ply == resource.data.ply
             && request.resource.data.current == resource.data.current
             && request.resource.data.winner == resource.data.winner
@@ -309,6 +356,9 @@ service cloud.firestore {
           && request.resource.data.ply == get(gamePath(gameId)).data.ply
           && request.resource.data.ply is int
           && request.resource.data.ply >= 0
+          /* Один ply — один документ; иначе в журнал можно подсунуть
+             несколько разных ходов под одним номером. */
+          && request.resource.data.ply == int(moveId)
           && request.resource.data.side in ['X', 'O']
           && (request.resource.data.place == null || validCell(request.resource.data.place))
           && (request.resource.data.fix == null || validFigures(request.resource.data.fix))
@@ -330,6 +380,7 @@ service cloud.firestore {
         && validName(request.resource.data.name)
         && request.resource.data.code is string
         && request.resource.data.code.size() <= 6
+        && (!('rank' in request.resource.data) || validRank(request.resource.data.rank))
         && request.resource.data.createdAt == request.time;
       /* delete нужен и тому, кто забирает соперника из очереди. */
       allow delete: if signedIn();
@@ -343,6 +394,7 @@ service cloud.firestore {
         && request.resource.data.code == code
         && request.resource.data.hostUid == uid()
         && validName(request.resource.data.hostName)
+        && (!('hostRank' in request.resource.data) || validRank(request.resource.data.hostRank))
         && request.resource.data.status == 'waiting'
         && request.resource.data.gameId == null
         && (!('joinerUid' in request.resource.data) || request.resource.data.joinerUid == null)
@@ -358,7 +410,10 @@ service cloud.firestore {
         && request.resource.data.code == resource.data.code
         && request.resource.data.gameId is string
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['status', 'gameId', 'joinerUid', 'updatedAt']);
+             .hasOnly(['status', 'gameId', 'joinerUid', 'updatedAt'])
+        /* Комната ведёт только в партию её хозяина и вступившего гостя. */
+        && get(gamePath(request.resource.data.gameId)).data.players
+             == [resource.data.hostUid, request.resource.data.joinerUid];
 
       allow delete: if signedIn()
         && (uid() == resource.data.hostUid || uid() == resource.data.joinerUid);

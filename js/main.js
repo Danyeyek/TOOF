@@ -45,10 +45,10 @@ function renderRank() {
 }
 
 /* Короткая плашка поверх интерфейса: появляется и сама уходит. */
-function showRankBanner(rank) {
+function showRankBanner(rank, prefix) {
     const banner = $('rankBanner');
     if (!banner || !rank) return;
-    banner.textContent = t('Новый ранг: ') + rankLabel(rank);
+    banner.textContent = (prefix || t('Новый ранг: ')) + rankLabel(rank);
     banner.hidden = false;
     /* Перезапуск анимации при повторном повышении. */
     banner.style.animation = 'none';
@@ -221,8 +221,9 @@ function updateAccountHint() {
 
     if (hint) {
         const mode = t(profile.registered ? 'аккаунт Google' : 'анонимный профиль этого браузера');
-        hint.textContent = t('Вы: {name} · {mode} · победы {wins}, поражения {losses}, ничьи {draws}', {
+        hint.textContent = t('Вы: {name} · {mode} · ранг {rank} · победы {wins}, поражения {losses}, ничьи {draws}', {
             name: profile.name, mode,
+            rank: profile.rank || '—',
             wins: profile.stats.wins, losses: profile.stats.losses, draws: profile.stats.draws
         });
     }
@@ -628,6 +629,13 @@ document.addEventListener('DOMContentLoaded', () => {
         renderDifficulty();
     });
 
+    /* Онлайн-ранг повышается серией побед над более сильными соперниками. */
+    document.addEventListener('toof:online-rank', event => {
+        const detail = event.detail || {};
+        showRankBanner(String(detail.rank || 0), t('Новый онлайн-ранг: '));
+        updateAccountHint();
+    });
+
     document.addEventListener('toof:color', () => {
         UI.render();
     });
@@ -782,7 +790,14 @@ document.addEventListener('DOMContentLoaded', () => {
             renderProfile();
         }).catch(error => {
             if (error && error.code === 'auth/popup-closed-by-user') return;
-            notify('Не удалось войти: ' + (error.message || 'ошибка входа'));
+            const messages = {
+                'auth/cancelled-popup-request': 'Окно входа уже открыто. Повторите попытку.',
+                'auth/popup-blocked': 'Браузер заблокировал окно входа. Разрешите всплывающие окна.',
+                'auth/credential-already-in-use': 'Этот Google-аккаунт уже привязан к другому профилю. Повторите вход.',
+                'auth/network-request-failed': 'Нет связи с сервером входа. Проверьте интернет.'
+            };
+            const code = error && error.code;
+            notify(messages[code] || ('Не удалось войти: ' + (error.message || 'ошибка входа')));
         });
     });
 

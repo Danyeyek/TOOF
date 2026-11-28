@@ -11,7 +11,12 @@ const Profile = (() => {
     const PROFILE_KEY = 'toof_profile_v1';
     const FRIENDS_KEY = 'toof_local_friends_v1';
     const STATS_KEY = 'toof_local_stats_v1';
+    const RANK_KEY = 'toof_online_rank_v1';
     const MERGED_KEY = 'toof_stats_merged_';
+    /* Онлайн-ранг: 0 — без ранга, чем больше число, тем сильнее игрок.
+       Повышение — три победы над разными игроками, чей ранг выше нашего. */
+    const MAX_RANK = 1000;
+    const MAX_LADDER = 8;
 
     const ADJECTIVES = ['Быстрый', 'Хитрый', 'Тихий', 'Смелый', 'Умный', 'Ловкий', 'Ясный', 'Дикий'];
     const ANIMALS = ['Лис', 'Кот', 'Волк', 'Сокол', 'Ёж', 'Барс', 'Кит', 'Ворон'];
@@ -25,7 +30,12 @@ const Profile = (() => {
         registered: false,
         ready: false,
         online: false,
-        stats: { wins: 0, losses: 0, draws: 0 }
+        stats: { wins: 0, losses: 0, draws: 0 },
+        rank: 0,
+        /* Цепочка побед: [{ uid, rank }] — только соперники выше текущего
+           ранга. Один uid учитывается один раз. После повышения остаются
+           только те, чей ранг всё ещё выше нового (цепочка на следующий ранг). */
+        ladder: []
     };
 
     const listeners = [];
@@ -34,16 +44,23 @@ const Profile = (() => {
     let pageHideHandler = null;
     let visibilityHandler = null;
 
+    function snapshot() {
+        return Object.assign({}, state, {
+            stats: Object.assign({}, state.stats),
+            ladder: state.ladder.map(item => Object.assign({}, item))
+        });
+    }
+
     function emit() {
         for (const listener of listeners.slice()) {
-            try { listener(Object.assign({}, state, { stats: Object.assign({}, state.stats) })); }
+            try { listener(snapshot()); }
             catch (e) { /* не ломаем UI из-за одного слушателя */ }
         }
     }
 
     function onChange(listener) {
         listeners.push(listener);
-        if (state.ready) listener(Object.assign({}, state, { stats: Object.assign({}, state.stats) }));
+        if (state.ready) listener(snapshot());
         return () => {
             const index = listeners.indexOf(listener);
             if (index !== -1) listeners.splice(index, 1);
@@ -63,6 +80,65 @@ const Profile = (() => {
     function writeJson(key, value) {
         try { localStorage.setItem(key, JSON.stringify(value)); }
         catch (e) { /* приватный режим */ }
+    }
+
+    function normalizeRank(value) {
+        const number = Number(value);
+        return Number.isInteger(number) && number >= 0 && number <= MAX_RANK ? number : 0;
+    }
+
+    function normalizeLadder(value) {
+        if (!Array.isArray(value)) return [];
+        const seen = new Set();
+        const result = [];
+        for (const item of value) {
+            if (!item || typeof item.uid !== 'string' || !item.uid) continue;
+            const rank = normalizeRank(item.rank);
+            if (!rank || seen.has(item.uid)) continue;
+            seen.add(item.uid);
+            result.push({ uid: item.uid, rank });
+        }
+        return result.slice(-MAX_LADDER);
+    }
+
+    function loadLocalRank() {
+        const saved = readJson(RANK_KEY, null) || {};
+        state.rank = normalizeRank(saved.rank);
+        state.ladder = normalizeLadder(saved.ladder);
+    }
+
+    function saveLocalRank() {
+        writeJson(RANK_KEY, { rank: state.rank, ladder: state.ladder });
+    }
+
+    /* Победа над более сильным игроком сдвигает ранг только если набрано
+       три разных соперника. Ничьи и победы над слабыми цепочку не сбивают,
+       но и не добавляют в неё; поражение сбрасывает её. Повышаемся до самого лёгкого ранга
+       из тройки: например, две победы над 1-м и одна над 2-м дают 1-й ранг,
+       а победа над 2-м остаётся в цепочке на следующий ранг. */
+    function applyRankWin(opponent) {
+        if (!opponent || typeof opponent.uid !== 'string' || !opponent.uid) return null;
+        if (opponent.uid === state.uid) return null;
+        const otherRank = normalizeRank(opponent.rank);
+        if (otherRank <= state.rank) return null;
+        if (state.ladder.some(item => item.uid === opponent.uid)) return null;
+
+        state.ladder.push({ uid: opponent.uid, rank: otherRank });
+        if (state.ladder.length < 3) return null;
+
+        const from = state.rank;
+        const to = Math.min.apply(null, state.ladder.map(item => item.rank));
+        state.rank = to;
+        /* В памяти остаются только соперники, которые всё ещё выше нового
+           ранга: на них держится цепочка следующего повышения. */
+        state.ladder = state.ladder.filter(item => item.rank > to);
+        return { from, to };
+    }
+
+    function adoptRemoteRank(remote) {
+        if (!remote) return;
+        state.rank = normalizeRank(remote.rank);
+        state.ladder = normalizeLadder(remote.ladder);
     }
 
     function randomInt(max) {
@@ -113,6 +189,7 @@ const Profile = (() => {
         state.code = String(saved.code || makeCode()).toUpperCase();
         state.registered = !!saved.registered;
         state.stats = Object.assign({ wins: 0, losses: 0, draws: 0 }, readJson(STATS_KEY, {}));
+        loadLocalRank();
         saveLocal();
     }
 
@@ -124,6 +201,7 @@ const Profile = (() => {
             registered: state.registered
         });
         writeJson(STATS_KEY, state.stats);
+        saveLocalRank();
     }
 
     function localFriends() {
@@ -141,7 +219,8 @@ const Profile = (() => {
         list.push({
             uid: friend.uid,
             name: cleanName(friend.name),
-            code: String(friend.code || '').toUpperCase()
+            code: String(friend.code || '').toUpperCase(),
+            rank: normalizeRank(friend.rank)
         });
         saveLocalFriends(list);
     }
@@ -167,6 +246,7 @@ const Profile = (() => {
             state.code = String(remote.code || state.code).toUpperCase();
             state.registered = !!remote.registered;
             mergeStats(remote);
+            adoptRemoteRank(remote);
             await ensureCode();
             if (state.code !== remote.code) {
                 await NetTransport.setUser(user.uid, {
@@ -187,6 +267,8 @@ const Profile = (() => {
             createdAt: Net.serverTimestamp(),
             updatedAt: Net.serverTimestamp(),
             stats: Object.assign({}, state.stats),
+            rank: state.rank,
+            ladder: state.ladder.map(item => Object.assign({}, item)),
             online: true,
             lastSeen: Net.serverTimestamp()
         };
@@ -215,6 +297,23 @@ const Profile = (() => {
         };
         window.addEventListener('pagehide', pageHideHandler);
         document.addEventListener('visibilitychange', visibilityHandler);
+    }
+
+    /* Один слушатель своего профиля на все состояния: аноним, Google и
+       повторный аноним после выхода. Иначе после смены uid старый слушатель
+       пишет данные уже не того аккаунта. */
+    function subscribeSelf() {
+        if (unsubUser) unsubUser();
+        unsubUser = NetTransport.subscribeUser(state.uid, remote => {
+            if (!remote) return;
+            state.name = cleanName(remote.name || state.name);
+            state.code = String(remote.code || state.code).toUpperCase();
+            state.registered = !!remote.registered;
+            mergeStats(remote);
+            adoptRemoteRank(remote);
+            saveLocal();
+            emit();
+        });
     }
 
     async function init() {
@@ -251,15 +350,7 @@ const Profile = (() => {
                     await syncLocalToRemote();
                     writeJson(mergedKey, true);
                 }
-                unsubUser = NetTransport.subscribeUser(user.uid, remote => {
-                    if (!remote) return;
-                    state.name = cleanName(remote.name || state.name);
-                    state.code = String(remote.code || state.code).toUpperCase();
-                    state.registered = !!remote.registered;
-                    mergeStats(remote);
-                    saveLocal();
-                    emit();
-                });
+                subscribeSelf();
             } else {
                 /* Аноним: данные локальные, но документ users/{uid} нужен
                    для поиска по коду и presence. */
@@ -290,6 +381,8 @@ const Profile = (() => {
             code: state.code,
             registered: state.registered,
             stats,
+            rank: state.rank,
+            ladder: state.ladder.map(item => Object.assign({}, item)),
             updatedAt: Net.serverTimestamp()
         }, true);
 
@@ -335,18 +428,14 @@ const Profile = (() => {
             code: state.code,
             registered: true,
             stats: state.stats,
+            rank: state.rank,
+            ladder: state.ladder.map(item => Object.assign({}, item)),
             updatedAt: Net.serverTimestamp()
         }, true);
 
-        if (unsubUser) unsubUser();
-        unsubUser = NetTransport.subscribeUser(state.uid, remote => {
-            if (!remote) return;
-            state.name = cleanName(remote.name || state.name);
-            state.code = String(remote.code || state.code).toUpperCase();
-            mergeStats(remote);
-            saveLocal();
-            emit();
-        });
+        subscribeSelf();
+        /* Heartbeat должен сразу писать presence под новым uid. */
+        await startPresence();
 
         saveLocal();
         emit();
@@ -365,6 +454,14 @@ const Profile = (() => {
         const user = await Net.ensureAuth();
         state.uid = user.uid;
         state.registered = false;
+        /* Google-код принадлежит другому аккаунту: анониму нужен свой.
+           ensureCode() попробует текущий код и, если он занят, вернёт новый. */
+        try {
+            await ensureRemoteUser(user);
+            subscribeSelf();
+        } catch (error) {
+            /* Firestore недоступен — профиль останется локальным. */
+        }
         /* Локальные друзья и статистика остаются на устройстве. */
         saveLocal();
         await startPresence();
@@ -372,17 +469,35 @@ const Profile = (() => {
         return state;
     }
 
-    function recordResult(result) {
+    /* opponent — { uid, rank } соперника по онлайн-партии. Только победы над
+       игроками выше нас двигают онлайн-ранг; ничья цепочку сохраняет, а
+       поражение сбрасывает. Статистика считается как раньше. */
+    function recordResult(result, opponent) {
         if (result === 'win') state.stats.wins++;
         else if (result === 'loss') state.stats.losses++;
         else if (result === 'draw') state.stats.draws++;
         else return Object.assign({}, state.stats);
+
+        const rankUp = result === 'win' ? applyRankWin(opponent) : null;
+        const chainReset = result === 'loss' && state.ladder.length > 0;
+        if (chainReset) state.ladder = [];
         saveLocal();
-        if (Net.ready && state.registered) {
+        if (Net.ready && state.uid) {
             NetTransport.recordStats(state.uid, result).catch(() => {});
+            /* Сброс цепочки тоже нужно записать: иначе после перезагрузки
+               или на другом устройстве старые победы оживут снова. */
+            if ((rankUp || chainReset) && NetTransport.setRank) {
+                NetTransport.setRank(state.uid, state.rank, state.ladder).catch(() => {});
+            }
         }
         emit();
-        return Object.assign({}, state.stats);
+        if (rankUp && typeof document !== 'undefined' && document.dispatchEvent &&
+            typeof CustomEvent === 'function') {
+            document.dispatchEvent(new CustomEvent('toof:online-rank', {
+                detail: { rank: state.rank, from: rankUp.from }
+            }));
+        }
+        return Object.assign({}, state.stats, { rank: state.rank, rankUp });
     }
 
     function isRegistered() {
@@ -401,6 +516,6 @@ const Profile = (() => {
         addLocalFriend,
         removeLocalFriend,
         saveLocalFriends,
-        get state() { return Object.assign({}, state, { stats: Object.assign({}, state.stats) }); }
+        get state() { return snapshot(); }
     };
 })();

@@ -66,6 +66,8 @@ const I18N = (() => {
         /* Ранги */
         'Ранг: ': 'Rank: ',
         'Новый ранг: ': 'New rank: ',
+        'Онлайн-ранг: ': 'Online rank: ',
+        'Новый онлайн-ранг: ': 'New online rank: ',
         'Новичок': 'Novice',
         'Любитель': 'Amateur',
         'Опытный': 'Skilled',
@@ -203,7 +205,7 @@ const I18N = (() => {
         ' · победы ': ' · wins ',
         ', поражения ': ', losses ',
         ', ничьи ': ', draws ',
-        'Вы: {name} · {mode} · победы {wins}, поражения {losses}, ничьи {draws}': 'You: {name} · {mode} · wins {wins}, losses {losses}, draws {draws}',
+        'Вы: {name} · {mode} · ранг {rank} · победы {wins}, поражения {losses}, ничьи {draws}': 'You: {name} · {mode} · rank {rank} · wins {wins}, losses {losses}, draws {draws}',
         'Профиль синхронизируется между устройствами через Google.': 'Profile syncs across devices via Google.',
         'Профиль привязан к этому браузеру. Войдите через Google, чтобы играть с того же аккаунта на других устройствах.': 'Profile is tied to this browser. Sign in with Google to use the same account on other devices.',
         'В сети': 'Online',

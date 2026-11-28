@@ -92,7 +92,8 @@ const Lobby = (() => {
             const gameId = await NetTransport.findRandom({
                 uid: Profile.state.uid,
                 name: myName(),
-                code: Profile.state.code
+                code: Profile.state.code,
+                rank: Profile.state.rank
             }, { timeoutMs: 20000, pollMs: 2000 });
 
             if (!gameId) return null;
@@ -120,7 +121,8 @@ const Lobby = (() => {
         await NetTransport.createRoom({
             code,
             hostUid: Profile.state.uid,
-            hostName: myName()
+            hostName: myName(),
+            hostRank: Profile.state.rank
         });
 
         roomCode = code;
@@ -139,7 +141,8 @@ const Lobby = (() => {
         if (!Net.ready) throw new Error('Онлайн не настроен');
         const gameId = await NetTransport.joinRoom(String(code || '').trim().toUpperCase(), {
             uid: Profile.state.uid,
-            name: myName()
+            name: myName(),
+            rank: Profile.state.rank
         });
         await openGame(gameId);
         return gameId;
@@ -163,12 +166,16 @@ const Lobby = (() => {
         const names = {};
         names[Profile.state.uid] = myName();
         names[friend.uid] = friend.name || 'Друг';
+        const ranks = {};
+        ranks[Profile.state.uid] = Profile.state.rank;
+        ranks[friend.uid] = friend.rank || 0;
 
         const gameId = await NetTransport.createGame({
             mode: 'friend',
             players: [Profile.state.uid, friend.uid],
             sides,
             names,
+            ranks,
             invited: friend.uid,
             status: 'invited'
         });

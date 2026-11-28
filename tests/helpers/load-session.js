@@ -21,7 +21,7 @@ function loadSession() {
     BOARD_SIZE, EMPTY, SIDE_X, SIDE_O
 };`;
 
-    const sandbox = { console };
+    const sandbox = { console, setTimeout, clearTimeout };
     vm.createContext(sandbox);
     vm.runInContext(source, sandbox, { filename: 'toof-session-bundle.js' });
     return sandbox.__TOOF_SESSION__;

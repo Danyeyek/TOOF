@@ -84,8 +84,9 @@ const Friends = (() => {
                 if (!Profile.isRegistered() && user && user.name) {
                     const local = Profile.localFriends();
                     const item = local.find(entry => entry.uid === friend.uid);
-                    if (item && item.name !== user.name) {
+                    if (item && (item.name !== user.name || item.rank !== user.rank)) {
                         item.name = user.name;
+                        item.rank = user.rank || 0;
                         Profile.saveLocalFriends(local);
                         friends = local;
                     }

@@ -11,6 +11,8 @@ const NetTransport = (() => {
     const INVITE_TTL = 7 * DAY;      // приглашения и комнаты
     const REQUEST_TTL = 30 * DAY;    // заявки в друзья
     const GAME_TTL = 90 * DAY;       // партия после последней активности
+    const MAX_RANK = 1000;
+    const MAX_LADDER = 8;
 
     function expiry(ms) {
         return firebase.firestore.Timestamp.fromMillis(Date.now() + ms);
@@ -54,6 +56,34 @@ const NetTransport = (() => {
         return 0;
     }
 
+    /* Ранг в очереди может прийти как числом, так и записью профиля.
+       Старые записи без ранга читаются как 0. */
+    function rankOf(value) {
+        const raw = value && typeof value === 'object' ? value.rank : value;
+        const number = Number(raw);
+        return Number.isInteger(number) && number >= 0 && number <= MAX_RANK ? number : 0;
+    }
+
+    function normalizeLadder(value) {
+        if (!Array.isArray(value)) return [];
+        const seen = new Set();
+        const result = [];
+        for (const item of value) {
+            if (!item || typeof item.uid !== 'string' || !item.uid) continue;
+            const rank = rankOf(item.rank);
+            if (!rank || seen.has(item.uid)) continue;
+            seen.add(item.uid);
+            result.push({ uid: item.uid, rank });
+        }
+        return result.slice(-MAX_LADDER);
+    }
+
+    function ranksMap(players, source) {
+        const ranks = {};
+        for (const uid of players) ranks[uid] = rankOf(source && source[uid]);
+        return ranks;
+    }
+
     function isExpired(game) {
         return !!(game && game.expiresAt && millis(game.expiresAt) < Date.now());
     }
@@ -66,12 +96,15 @@ const NetTransport = (() => {
         return gameRef(gameId).collection('moves').orderBy('ply', 'asc');
     }
 
-    function gamePayload({ mode, players, sides, names, invited, status }) {
+    function gamePayload({ mode, players, sides, names, ranks, invited, status }) {
         const payload = {
             mode: mode || 'friend',
             players: players.slice(),
             sides: Object.assign({}, sides),
             names: Object.assign({}, names),
+            /* Ранг фиксируется в начале партии: повышение одним из игроков
+               не меняет условие повышения для победителя. */
+            ranks: ranksMap(players, ranks),
             invited: invited || null,
             status: status || 'active',
             current: 'X',
@@ -204,6 +237,10 @@ const NetTransport = (() => {
                 players: game.players.slice(),
                 sides,
                 names: Object.assign({}, game.names),
+                /* Ранги реванша берём из исходной партии: они фиксируют
+                   условия повышения для этого матча. Для старых партий
+                   без рангов подставляем 0. */
+                ranks: ranksMap(game.players, game.ranks || {}),
                 invited: null,
                 status: 'active',
                 current: 'X',
@@ -234,7 +271,7 @@ const NetTransport = (() => {
     }
 
     async function pickRandom(me) {
-        const snap = await db().collection('queue').orderBy('createdAt', 'asc').limit(10).get();
+        const snap = await db().collection('queue').orderBy('createdAt', 'asc').limit(50).get();
         const freshAfter = Date.now() - 60 * 1000;
         const candidates = snap.docs
             .map(doc => Object.assign({ id: doc.id }, doc.data()))
@@ -242,6 +279,16 @@ const NetTransport = (() => {
                Соперник берётся из id документа, а не из поля uid: поле мог
                быть подменено, и тогда игра создалась бы с чужим игроком. */
             .filter(item => item.id !== me.uid && millis(item.createdAt) > freshAfter);
+
+        /* Сначала одинаковый ранг, затем максимально близкий; при равной
+           разнице — тот, кто дольше ждёт, а затем более сильный игрок. */
+        const myRank = rankOf(me);
+        candidates.sort((a, b) => {
+            const distance = Math.abs(rankOf(a) - myRank) - Math.abs(rankOf(b) - myRank);
+            if (distance) return distance;
+            const waiting = millis(a.createdAt) - millis(b.createdAt);
+            return waiting || rankOf(b) - rankOf(a);
+        });
 
         for (const candidate of candidates) {
             const otherUid = candidate.id;
@@ -261,12 +308,17 @@ const NetTransport = (() => {
                     const names = {};
                     names[me.uid] = me.name;
                     names[otherUid] = candidate.name || 'Соперник';
+                    const ranks = ranksMap([me.uid, otherUid], {
+                        [me.uid]: me.rank,
+                        [otherUid]: candidate.rank
+                    });
 
                     tx.set(gameRefNew, {
                         mode: 'random',
                         players: [me.uid, otherUid],
                         sides,
                         names,
+                        ranks,
                         invited: null,
                         status: 'active',
                         current: 'X',
@@ -298,6 +350,7 @@ const NetTransport = (() => {
             uid: me.uid,
             name: me.name,
             code: me.code,
+            rank: rankOf(me),
             createdAt: Net.serverTimestamp()
         }, { merge: true });
 
@@ -449,6 +502,16 @@ const NetTransport = (() => {
         await db().collection('users').doc(uid).update(update);
     }
 
+    /* Онлайн-ранг и цепочка побед пишутся только после того, как клиент
+       убедился в трёх разных соперниках выше его ранга. */
+    async function setRank(uid, rank, ladder) {
+        await db().collection('users').doc(uid).update({
+            rank: rankOf(rank),
+            ladder: normalizeLadder(ladder),
+            updatedAt: Net.serverTimestamp()
+        });
+    }
+
     async function setPresence(uid, online) {
         await db().collection('users').doc(uid).update({
             online: !!online,
@@ -467,6 +530,7 @@ const NetTransport = (() => {
             uid: friend.uid,
             name: friend.name || 'Игрок',
             code: friend.code || '',
+            rank: rankOf(friend.rank),
             since: Net.serverTimestamp()
         }, { merge: true });
     }
@@ -475,11 +539,12 @@ const NetTransport = (() => {
         await db().collection('users').doc(uid).collection('friends').doc(friendUid).delete();
     }
 
-    async function createRoom({ code, hostUid, hostName }) {
+    async function createRoom({ code, hostUid, hostName, hostRank }) {
         await db().collection('rooms').doc(code).set({
             code,
             hostUid,
             hostName,
+            hostRank: rankOf(hostRank),
             hostSide: 'X',
             status: 'waiting',
             gameId: null,
@@ -515,12 +580,17 @@ const NetTransport = (() => {
             const names = {};
             names[room.hostUid] = room.hostName || 'Хозяин';
             names[joiner.uid] = joiner.name || 'Гость';
+            const ranks = ranksMap([room.hostUid, joiner.uid], {
+                [room.hostUid]: room.hostRank,
+                [joiner.uid]: joiner.rank
+            });
 
             tx.set(gameRefNew, {
                 mode: 'friend',
                 players: [room.hostUid, joiner.uid],
                 sides,
                 names,
+                ranks,
                 invited: null,
                 status: 'active',
                 current: 'X',
@@ -572,6 +642,8 @@ const NetTransport = (() => {
         setUser,
         reserveCode,
         recordStats,
+        setRank,
+        rankOf,
         setPresence,
         subscribeFriends,
         addFriend,

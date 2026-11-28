@@ -27,6 +27,8 @@ const UI = (() => {
         messageKind: '',
         mySide: 'X',
         opponentName: '',
+        opponentUid: '',
+        opponentRank: 0,
         session: null,
         awaitingEcho: false,
         onlineStatus: 'active',
@@ -233,7 +235,10 @@ const UI = (() => {
                 text = 'Ничья — свободных клеток не осталось.';
                 kind = 'draw';
             }
-            Profile.recordResult(winner ? (iWon ? 'win' : 'loss') : 'draw');
+            Profile.recordResult(winner ? (iWon ? 'win' : 'loss') : 'draw', {
+                uid: state.opponentUid,
+                rank: state.opponentRank
+            });
         } else if (state.mode === 'bot') {
             if (winner === state.human) {
                 Sound.play('win');
@@ -483,6 +488,8 @@ const UI = (() => {
         state.finished = false;
         state.lastPly = 0;
         state.opponentName = '';
+        state.opponentUid = '';
+        state.opponentRank = 0;
         state.mySide = 'X';
         state.resumable = false;
         clearTimeout(state.botTimer);
@@ -506,6 +513,8 @@ const UI = (() => {
         state.session = session;
         state.mySide = session.mySide || 'X';
         state.opponentName = session.opponentName || t('Соперник');
+        state.opponentUid = session.opponentUid || '';
+        state.opponentRank = session.opponentRank || 0;
         state.awaitingEcho = false;
         state.onlineStatus = session.status || 'connecting';
         state.finished = false;
@@ -533,6 +542,8 @@ const UI = (() => {
         if (boardChanged || !busy) Game.restore(data.snapshot);
         state.mySide = data.mySide || state.mySide;
         state.opponentName = data.opponentName || state.opponentName;
+        if (data.opponentUid !== undefined) state.opponentUid = data.opponentUid;
+        if (data.opponentRank !== undefined) state.opponentRank = data.opponentRank;
         state.awaitingEcho = !!data.awaitingEcho;
         state.onlineStatus = data.status || state.onlineStatus;
         state.lastPly = data.appliedPly || 0;

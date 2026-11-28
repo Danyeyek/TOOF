@@ -135,6 +135,36 @@ test('сессия не отправляет фигуру неправильно
     assert.equal(session.awaitingEcho, false);
 });
 
+test('сессия перечитывает журнал, если эхо хода не пришло', async () => {
+    const core = loadSession();
+    let fetches = 0;
+    const transport = {
+        subscribeGame() { return () => {}; },
+        async fetchMoves() { fetches++; return []; },
+        async sendMove() { /* запись прошла, но эха нет */ },
+        async setStatus() {}
+    };
+    const session = core.createOnlineSession({
+        transport,
+        protocol: core.NetProtocol,
+        gameId: 'game-1',
+        myUid: 'me',
+        mySide: 'X',
+        echoTimeoutMs: 20
+    });
+    session.start();
+
+    const result = await session.commitMove({ place: [4, 4], fix: null });
+    assert.equal(result.ok, true);
+    assert.equal(session.awaitingEcho, true);
+
+    await new Promise(resolve => setTimeout(resolve, 60));
+
+    assert.equal(fetches, 1, 'журнал перечитан по таймеру');
+    assert.equal(session.awaitingEcho, false, 'сессия снова готова к ходу');
+    session.destroy();
+});
+
 test('сессия принимает статус приглашения и реванш', async () => {
     const core = loadSession();
     const transport = makeTransport();

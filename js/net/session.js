@@ -24,6 +24,8 @@ function createOnlineSession(options) {
     let rematchGameId = null;
     let destroyed = false;
     let unsub = null;
+    let echoTimer = null;
+    const echoTimeoutMs = options.echoTimeoutMs || 5000;
 
     const onUpdate = options.onUpdate || function () {};
     const onError = options.onError || function () {};
@@ -40,6 +42,13 @@ function createOnlineSession(options) {
         if (!mySide && game.sides) mySide = game.sides[myUid] || null;
     }
 
+    function opponentRank() {
+        const other = otherUid();
+        if (!other || !game || !game.ranks) return 0;
+        const number = Number(game.ranks[other]);
+        return Number.isInteger(number) && number >= 0 ? number : 0;
+    }
+
     function emit() {
         if (destroyed) return;
         onUpdate({
@@ -48,6 +57,8 @@ function createOnlineSession(options) {
             moves: moves.slice(),
             mySide,
             opponentName,
+            opponentUid: otherUid(),
+            opponentRank: opponentRank(),
             awaitingEcho,
             winner,
             status,
@@ -92,10 +103,32 @@ function createOnlineSession(options) {
         emit();
     }
 
+    function clearEchoTimer() {
+        if (echoTimer) {
+            clearTimeout(echoTimer);
+            echoTimer = null;
+        }
+    }
+
+    function watchEcho() {
+        clearEchoTimer();
+        echoTimer = setTimeout(() => {
+            echoTimer = null;
+            if (destroyed || !awaitingEcho) return;
+            /* Запись хода прошла, но эхо из журнала не пришло (например,
+               слушатель отвалился). Перечитаем журнал, иначе сессия
+               навсегда останется в состоянии «ождём ответ». */
+            resync().catch(error => onError(error));
+        }, echoTimeoutMs);
+    }
+
     function handleMoves(list) {
         const previous = appliedPly;
         if (!rebuild(list)) return;
-        if (awaitingEcho && appliedPly > previous) awaitingEcho = false;
+        if (awaitingEcho && appliedPly > previous) {
+            awaitingEcho = false;
+            clearEchoTimer();
+        }
         emit();
     }
 
@@ -135,8 +168,10 @@ function createOnlineSession(options) {
                 move,
                 winner: check.winner || null
             });
+            watchEcho();
             return { ok: true, winner: check.winner || null };
         } catch (error) {
+            clearEchoTimer();
             awaitingEcho = false;
             await resync().catch(() => {});
             onError(error);
@@ -145,11 +180,17 @@ function createOnlineSession(options) {
     }
 
     async function resync() {
-        const list = await transport.fetchMoves(gameId);
-        if (!rebuild(list)) return false;
-        awaitingEcho = false;
-        emit();
-        return true;
+        clearEchoTimer();
+        try {
+            const list = await transport.fetchMoves(gameId);
+            if (!rebuild(list)) return false;
+            return true;
+        } finally {
+            /* Даже если журнал временно недоступен, разблокируем ход,
+               чтобы игрок мог повторить отправку. */
+            awaitingEcho = false;
+            emit();
+        }
     }
 
     async function rematch() {
@@ -164,6 +205,7 @@ function createOnlineSession(options) {
 
     function destroy() {
         destroyed = true;
+        clearEchoTimer();
         if (unsub) unsub();
         unsub = null;
     }
@@ -180,6 +222,8 @@ function createOnlineSession(options) {
         get game() { return game; },
         get mySide() { return mySide; },
         get opponentName() { return opponentName; },
+        get opponentUid() { return otherUid(); },
+        get opponentRank() { return opponentRank(); },
         get awaitingEcho() { return awaitingEcho; },
         get winner() { return winner; },
         get status() { return status; },
